@@ -1,4 +1,6 @@
 ﻿using Maple2Storage.Enums;
+using Maple2Storage.Types.Metadata;
+using MapleServer2.Data.Static;
 using MapleServer2.Packets;
 using MapleServer2.Types;
 
@@ -12,16 +14,18 @@ public class Character : FieldActor<Player>
         set => Value.Stats = value;
     }
 
-    public override AdditionalEffects AdditionalEffects
-    {
-        get => Value.AdditionalEffects;
-    }
-
     private CancellationTokenSource CombatCTS;
 
     private Task HpRegenThread;
     private Task SpRegenThread;
     private Task StaRegenThread;
+    public IFieldObject<LiftableObject> CarryingLiftable;
+    public Pet ActivePet;
+    public override AdditionalEffects AdditionalEffects { get => Value.AdditionalEffects; }
+
+    private DateTime LastConsumeStaminaTime;
+
+    public override FieldManager FieldManager { get => Value?.Session?.FieldManager; }
 
     public Character(int objectId, Player value, FieldManager fieldManager) : base(objectId, value, fieldManager)
     {
@@ -58,13 +62,19 @@ public class Character : FieldActor<Player>
         ConsumeSp(spiritCost);
         ConsumeStamina(staminaCost);
 
+        QuestManager.OnSkillUse(Value, skillCast.SkillId);
+
         // TODO: Move this and all others combat cases like recover sp to its own class.
         // Since the cast is always sent by the skill, we have to check buffs even when not doing damage.
-        if (skillCast.IsBuffToOwner() || skillCast.IsBuffToEntity() || skillCast.IsBuffShield() || skillCast.IsDebuffToOwner())
+        List<SkillCondition> conditionSkills = SkillMetadataStorage.GetSkill(skillCast.SkillId)?.SkillLevels?.FirstOrDefault(level => level.Level == skillCast.SkillLevel)?.ConditionSkills;
+
+        EffectTriggers triggers = new()
         {
-            Status status = new(skillCast, ObjectId, ObjectId, 1);
-            StatusHandler.Handle(Value.Session, status);
-        }
+            Caster = this,
+            Owner = this
+        };
+
+        SkillTriggerHandler.FireTriggers(conditionSkills, triggers);
 
         Value.Session.FieldManager.BroadcastPacket(SkillUsePacket.SkillUse(skillCast));
         Value.Session.Send(StatPacket.SetStats(this));
@@ -84,7 +94,7 @@ public class Character : FieldActor<Player>
             Stat stat = Stats[StatAttribute.Hp];
             if (stat.Total < stat.Bonus)
             {
-                stat.Increase(Math.Min(amount, stat.Bonus - stat.Total));
+                stat.AddValue(amount);
                 Value.Session.Send(StatPacket.UpdateStats(this, StatAttribute.Hp));
             }
         }
@@ -100,7 +110,7 @@ public class Character : FieldActor<Player>
         lock (Stats)
         {
             Stat stat = Stats[StatAttribute.Hp];
-            stat.Decrease(Math.Min(amount, stat.Total));
+            stat.AddValue(-amount);
         }
 
         if (HpRegenThread == null || HpRegenThread.IsCompleted)
@@ -121,7 +131,7 @@ public class Character : FieldActor<Player>
             Stat stat = Stats[StatAttribute.Spirit];
             if (stat.Total < stat.Bonus)
             {
-                stat.Increase(Math.Min(amount, stat.Bonus - stat.Total));
+                stat.AddValue(amount);
                 Value.Session.Send(StatPacket.UpdateStats(this, StatAttribute.Spirit));
             }
         }
@@ -137,7 +147,7 @@ public class Character : FieldActor<Player>
         lock (Stats)
         {
             Stat stat = Stats[StatAttribute.Spirit];
-            Stats[StatAttribute.Spirit].Decrease(Math.Min(amount, stat.Total));
+            Stats[StatAttribute.Spirit].AddValue(-amount);
         }
 
         if (SpRegenThread == null || SpRegenThread.IsCompleted)
@@ -158,13 +168,18 @@ public class Character : FieldActor<Player>
             Stat stat = Stats[StatAttribute.Stamina];
             if (stat.Total < stat.Bonus)
             {
-                Stats[StatAttribute.Stamina].Increase(Math.Min(amount, stat.Bonus - stat.Total));
+                Stats[StatAttribute.Stamina].AddValue(amount);
                 Value.Session.Send(StatPacket.UpdateStats(this, StatAttribute.Stamina));
             }
         }
     }
 
-    public override void ConsumeStamina(int amount)
+    /// <summary>
+    /// Consumes stamina.
+    /// </summary>
+    /// <param name="amount">The amount</param>
+    /// <param name="noRegen">If regen should be stopped</param>
+    public override void ConsumeStamina(int amount, bool noRegen = false)
     {
         if (amount <= 0)
         {
@@ -174,23 +189,31 @@ public class Character : FieldActor<Player>
         lock (Stats)
         {
             Stat stat = Stats[StatAttribute.Stamina];
-            Stats[StatAttribute.Stamina].Decrease(Math.Min(amount, stat.Total));
+            Stats[StatAttribute.Stamina].AddValue(-amount);
+            LastConsumeStaminaTime = DateTime.Now;
         }
 
         if (StaRegenThread == null || StaRegenThread.IsCompleted)
         {
-            StaRegenThread = StartRegen(StatAttribute.Stamina, StatAttribute.StaminaRegen, StatAttribute.StaminaRegenInterval);
+            StaRegenThread = StartRegen(StatAttribute.Stamina, StatAttribute.StaminaRegen, StatAttribute.StaminaRegenInterval, noRegen);
         }
     }
 
-    private Task StartRegen(StatAttribute statAttribute, StatAttribute regenStatAttribute, StatAttribute timeStatAttribute)
+    /// <summary>
+    /// Starts the regen task for the given stat. If noRegen is true and last consume time is less than 1.5 seconds ago, the regen will not be started.
+    /// </summary>
+    /// <param name="statAttribute">The stat it self. E.g: Stamina</param>
+    /// <param name="regenStatAttribute">The stat for the regen amount. E.g: StaminaRegen</param>
+    /// <param name="timeStatAttribute">The stat for the regen interval. E.g: StaminaRegenInterval</param>
+    /// <param name="noRegen">If regen should pause</param>
+    private Task StartRegen(StatAttribute statAttribute, StatAttribute regenStatAttribute, StatAttribute timeStatAttribute, bool noRegen = false)
     {
         // TODO: merge regen updates with larger packets
         return Task.Run(async () =>
         {
             while (true)
             {
-                await Task.Delay(Stats[timeStatAttribute].Total);
+                await Task.Delay(Math.Max(Stats[timeStatAttribute].Total, 100));
 
                 lock (Stats)
                 {
@@ -199,13 +222,15 @@ public class Character : FieldActor<Player>
                         return;
                     }
 
-                    // TODO: Check if regen-enabled
+                    // If noRegen is true and last consume time is less than 1.5 seconds ago, the regen will not be started.
+                    if (statAttribute is StatAttribute.Stamina && noRegen && DateTime.Now - LastConsumeStaminaTime < TimeSpan.FromSeconds(1.5))
+                    {
+                        continue;
+                    }
+
                     AddStatRegen(statAttribute, regenStatAttribute);
                     Value.Session?.FieldManager.BroadcastPacket(StatPacket.UpdateStats(this, statAttribute));
-                    if (Value.Party != null)
-                    {
-                        Value.Party.BroadcastPacketParty(PartyPacket.UpdateHitpoints(Value));
-                    }
+                    Value.Party?.BroadcastPacketParty(PartyPacket.UpdateHitpoints(Value));
                 }
             }
         });
@@ -247,8 +272,7 @@ public class Character : FieldActor<Player>
         {
             if (stat.Total < stat.Bonus)
             {
-                int missingAmount = stat.Bonus - stat.Total;
-                stat.Increase(Math.Clamp(regenAmount, 0, missingAmount));
+                stat.AddValue(regenAmount);
             }
         }
     }
@@ -267,8 +291,20 @@ public class Character : FieldActor<Player>
 
     public override void InitializeEffects()
     {
+        Value.InitializeEffects();
+
         base.InitializeEffects();
 
-        Value.InitializeEffects();
+        ComputeStats();
+    }
+
+    public override void StatsComputed()
+    {
+        Value.Session.Send(StatPacket.SetStats(this));
+    }
+
+    public override void AddStats()
+    {
+        Value.AddStats();
     }
 }

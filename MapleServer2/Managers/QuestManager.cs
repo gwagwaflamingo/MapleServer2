@@ -42,6 +42,27 @@ public static class QuestManager
             .UpdateRelevantConditions(player.Session, ConditionTypes.Npc, npcId, mapId);
     }
 
+    public static void OnItemPickup(Player player, Item item)
+    {
+        GetRelevantQuests(player, ConditionTypes.ItemExist)
+            .UpdateRelevantConditions(player.Session, ConditionTypes.ItemExist, item.Id);
+
+        GetRelevantQuests(player, ConditionTypes.ItemPickup)
+            .UpdateRelevantConditions(player.Session, ConditionTypes.ItemPickup, item.Id);
+    }
+
+    public static void OnSkillUse(Player player, int skillId)
+    {
+        GetRelevantQuests(player, ConditionTypes.Skill)
+            .UpdateRelevantConditions(player.Session, ConditionTypes.Skill, skillId);
+    }
+
+    public static void OnTrigger(Player player, string code)
+    {
+        GetRelevantQuests(player, ConditionTypes.Trigger)
+            .UpdateRelevantConditions(player.Session, ConditionTypes.Trigger, code);
+    }
+
     #region Helper Methods
 
     /// <summary>
@@ -59,7 +80,7 @@ public static class QuestManager
         {
             quest.Condition.Where(condition => ConditionHelper.IsMatching(condition.Type, conditionType)
                                                && ConditionHelper.IsMatching(condition.Code, code)
-                                               && ConditionHelper.IsMatching(condition.Target, target)
+                                               && (ConditionHelper.IsMatching(condition.Target, target) || ConditionHelper.IsMatching(condition.Target, ""))
                                                && !condition.Completed)
                 .UpdateConditions(session, quest);
 
@@ -82,9 +103,13 @@ public static class QuestManager
         {
             quest.Condition.Where(condition => ConditionHelper.IsMatching(condition.Type, conditionType)
                                                && ConditionHelper.IsMatching(condition.Code, code)
-                                               && (ConditionHelper.IsMatching(condition.Target, target) || ConditionHelper.IsMatching(condition.Target, code.ToString()))
+                                               && (ConditionHelper.IsMatching(condition.Target, target) ||
+                                                   ConditionHelper.IsMatching(condition.Target, code.ToString()) ||
+                                                   ConditionHelper.IsMatching(condition.Target, ""))
                                                && !condition.Completed)
                 .UpdateConditions(session, quest);
+
+            DatabaseManager.Quests.Update(quest);
         }
     }
 
@@ -122,8 +147,6 @@ public static class QuestManager
             session.Player.Levels.GainExp(quest.Reward.Exp);
             session.Player.Wallet.Meso.Modify(quest.Reward.Money);
             session.Send(QuestPacket.CompleteQuest(quest.Basic.Id, false));
-
-            DatabaseManager.Quests.Update(quest);
         }
     }
 

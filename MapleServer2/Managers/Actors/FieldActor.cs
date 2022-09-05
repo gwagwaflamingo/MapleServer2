@@ -2,6 +2,7 @@
 using Maple2Storage.Enums;
 using Maple2Storage.Types;
 using Maple2Storage.Types.Metadata;
+using MapleServer2.Enums;
 using MapleServer2.Packets;
 using MapleServer2.Servers.Game;
 using MapleServer2.Types;
@@ -21,14 +22,18 @@ public abstract class FieldActor<T> : FieldObject<T>, IFieldActor<T>
     public bool OnCooldown { get; set; }
     public Agent Agent { get; set; }
     public virtual AdditionalEffects AdditionalEffects { get; }
+    public SkillTriggerHandler SkillTriggerHandler { get; }
 
-    public FieldManager FieldManager { get; }
+    public virtual FieldManager FieldManager { get; }
     public FieldNavigator Navigator { get; }
 
     protected FieldActor(int objectId, T value, FieldManager fieldManager) : base(objectId, value)
     {
         FieldManager = fieldManager;
         Navigator = fieldManager.Navigator;
+
+        AdditionalEffects = new(this);
+        SkillTriggerHandler = new(this);
     }
 
     public virtual void Cast(SkillCast skillCast)
@@ -47,7 +52,7 @@ public abstract class FieldActor<T> : FieldObject<T>, IFieldActor<T>
     public virtual void Heal(GameSession session, Status status, int amount)
     {
         session.FieldManager.BroadcastPacket(SkillDamagePacket.Heal(status, amount));
-        Stats[StatAttribute.Hp].Increase(amount);
+        Stats[StatAttribute.Hp].AddValue(amount);
         session.Send(StatPacket.UpdateStats(this, StatAttribute.Hp));
     }
 
@@ -63,7 +68,7 @@ public abstract class FieldActor<T> : FieldObject<T>, IFieldActor<T>
             Stat stat = Stats[StatAttribute.Hp];
             if (stat.Total < stat.Bonus)
             {
-                stat.Increase(Math.Min(amount, stat.Bonus - stat.Total));
+                stat.AddValue(amount);
             }
         }
     }
@@ -78,7 +83,7 @@ public abstract class FieldActor<T> : FieldObject<T>, IFieldActor<T>
         lock (Stats)
         {
             Stat stat = Stats[StatAttribute.Hp];
-            stat.Decrease(Math.Min(amount, stat.Total));
+            stat.AddValue(-amount);
         }
     }
 
@@ -94,7 +99,7 @@ public abstract class FieldActor<T> : FieldObject<T>, IFieldActor<T>
             Stat stat = Stats[StatAttribute.Spirit];
             if (stat.Total < stat.Bonus)
             {
-                stat.Increase(Math.Min(amount, stat.Bonus - stat.Total));
+                stat.AddValue(amount);
             }
         }
     }
@@ -109,7 +114,7 @@ public abstract class FieldActor<T> : FieldObject<T>, IFieldActor<T>
         lock (Stats)
         {
             Stat stat = Stats[StatAttribute.Spirit];
-            Stats[StatAttribute.Spirit].Decrease(Math.Min(amount, stat.Total));
+            Stats[StatAttribute.Spirit].AddValue(-amount);
         }
     }
 
@@ -125,12 +130,12 @@ public abstract class FieldActor<T> : FieldObject<T>, IFieldActor<T>
             Stat stat = Stats[StatAttribute.Stamina];
             if (stat.Total < stat.Bonus)
             {
-                Stats[StatAttribute.Stamina].Increase(Math.Min(amount, stat.Bonus - stat.Total));
+                Stats[StatAttribute.Stamina].AddValue(amount);
             }
         }
     }
 
-    public virtual void ConsumeStamina(int amount)
+    public virtual void ConsumeStamina(int amount, bool noRegen = false)
     {
         if (amount <= 0)
         {
@@ -140,14 +145,14 @@ public abstract class FieldActor<T> : FieldObject<T>, IFieldActor<T>
         lock (Stats)
         {
             Stat stat = Stats[StatAttribute.Stamina];
-            Stats[StatAttribute.Stamina].Decrease(Math.Min(amount, stat.Total));
+            Stats[StatAttribute.Stamina].AddValue(-amount);
         }
     }
 
     public virtual void Damage(DamageHandler damage, GameSession session)
     {
         Stat health = Stats[StatAttribute.Hp];
-        health.Decrease((long) damage.Damage);
+        health.AddValue(-(long) damage.Damage);
         if (health.Total <= 0)
         {
             Perish();
@@ -165,37 +170,76 @@ public abstract class FieldActor<T> : FieldObject<T>, IFieldActor<T>
 
     public void IncreaseStats(AdditionalEffect effect)
     {
-        if (effect.LevelMetadata.Status?.Stats != null)
+        if (effect.LevelMetadata?.Status?.Stats != null)
         {
             foreach ((StatAttribute stat, EffectStatMetadata statValue) in effect.LevelMetadata.Status.Stats)
             {
-                Stats[stat].IncreaseBonus(statValue.Flat + (long) (1000 * statValue.Rate));
+                Stats.AddStat(stat, statValue.AttributeType, statValue.Flat, statValue.Rate);
             }
         }
-    }
 
-    public void DecreaseStats(AdditionalEffect effect)
-    {
-        if (effect.LevelMetadata.Status?.Stats != null)
+        EffectInvokeMetadata invoke = effect.LevelMetadata?.InvokeEffect;
+
+        if (invoke != null)
         {
-            foreach ((StatAttribute stat, EffectStatMetadata statValue) in effect.LevelMetadata.Status.Stats)
+            if (invoke.SkillGroupId != 0)
             {
-                Stats[stat].IncreaseBonus(-statValue.Flat - (long) (1000 * statValue.Rate));
+                Stats.AddSkillGroup(invoke.SkillGroupId, invoke.Values[0], invoke.Rates[0]);
+            }
+
+            if (invoke.EffectGroupId != 0)
+            {
+                Stats.AddEffectGroup(invoke.EffectGroupId, invoke.Values[0], invoke.Rates[0]);
             }
         }
     }
 
     public virtual void EffectAdded(AdditionalEffect effect)
     {
-        IncreaseStats(effect);
+        if ((effect?.LevelMetadata?.Status?.Stats?.Count ?? 0) > 0)
+        {
+            ComputeStats();
+        }
     }
 
     public virtual void EffectRemoved(AdditionalEffect effect)
     {
-        DecreaseStats(effect);
+        if ((effect?.LevelMetadata?.Status?.Stats?.Count ?? 0) > 0)
+        {
+            ComputeStats();
+        }
     }
 
     public virtual void InitializeEffects()
+    {
+        StatsComputed();
+    }
+
+    public void ComputeStats()
+    {
+        Stat hp = Stats[StatAttribute.Hp];
+        Stat spirit = Stats[StatAttribute.Spirit];
+        Stat stamina = Stats[StatAttribute.Stamina];
+
+        long hpValue = hp.TotalLong;
+        long spiritValue = spirit.TotalLong;
+        long staminaValue = stamina.TotalLong;
+
+        AddStats();
+
+        hp.SetValue(hpValue);
+        spirit.SetValue(spiritValue);
+        stamina.SetValue(staminaValue);
+
+        StatsComputed();
+    }
+
+    public virtual void AddStats()
+    {
+
+    }
+
+    public virtual void StatsComputed()
     {
 
     }

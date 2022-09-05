@@ -16,7 +16,7 @@ internal class InteractObjectHandler : GamePacketHandler<InteractObjectHandler>
 {
     public override RecvOp OpCode => RecvOp.InteractObject;
 
-    private enum InteractObjectMode : byte
+    private enum Mode : byte
     {
         Cast = 0x0B,
         Interact = 0x0C
@@ -24,14 +24,14 @@ internal class InteractObjectHandler : GamePacketHandler<InteractObjectHandler>
 
     public override void Handle(GameSession session, PacketReader packet)
     {
-        InteractObjectMode mode = (InteractObjectMode) packet.ReadByte();
+        Mode mode = (Mode) packet.ReadByte();
 
         switch (mode)
         {
-            case InteractObjectMode.Cast:
+            case Mode.Cast:
                 HandleCast(session, packet);
                 break;
-            case InteractObjectMode.Interact:
+            case Mode.Interact:
                 HandleInteract(session, packet);
                 break;
             default:
@@ -43,7 +43,7 @@ internal class InteractObjectHandler : GamePacketHandler<InteractObjectHandler>
     private static void HandleCast(GameSession session, PacketReader packet)
     {
         string id = packet.ReadString();
-        session.FieldManager.State.InteractObjects.TryGetValue(id, out InteractObject interactObject);
+        session.FieldManager.State.InteractObjects.TryGetValue(id, out IFieldObject<InteractObject> interactObject);
         if (interactObject == null)
         {
             return;
@@ -57,11 +57,13 @@ internal class InteractObjectHandler : GamePacketHandler<InteractObjectHandler>
         Player player = session.Player;
 
         string id = packet.ReadString();
-        session.FieldManager.State.InteractObjects.TryGetValue(id, out InteractObject interactObject);
-        if (interactObject == null)
+        session.FieldManager.State.InteractObjects.TryGetValue(id, out IFieldObject<InteractObject> fieldInteractObject);
+        if (fieldInteractObject is null)
         {
             return;
         }
+
+        InteractObject interactObject = fieldInteractObject.Value;
 
         InteractObjectMetadata metadata = InteractObjectMetadataStorage.GetInteractObjectMetadata(interactObject.InteractId);
         QuestManager.OnInteractObject(player, interactObject.InteractId);
@@ -144,7 +146,7 @@ internal class InteractObjectHandler : GamePacketHandler<InteractObjectHandler>
                         foreach (int itemId in dropGroupContent.ItemIds)
                         {
                             int amount = Random.Shared.Next((int) dropGroupContent.MinAmount, (int) dropGroupContent.MaxAmount);
-                            Item item = new(itemId, amount, dropGroupContent.Rarity);
+                            Item item = new(itemId, amount, Math.Clamp((int) dropGroupContent.Rarity, 1, 6));
 
                             session.FieldManager.AddItem(session.Player.FieldPlayer, item);
                         }

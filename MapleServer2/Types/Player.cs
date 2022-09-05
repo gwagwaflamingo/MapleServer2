@@ -16,9 +16,7 @@ namespace MapleServer2.Types;
 
 public class Player
 {
-    // Bypass Key is constant PER ACCOUNT, unsure how it is validated
-    // Seems like as long as it's valid, it doesn't matter though
-    public readonly long UnknownId = 0x01EF80C2; //0x01CC3721;
+    public long SessionId;
     public GameSession Session;
 
     public Account Account;
@@ -28,6 +26,7 @@ public class Player
     public long CharacterId { get; set; }
     public long CreationTime { get; set; }
     public long LastLogTime { get; set; }
+    public long DeletionTime { get; set; }
     public long Birthday { get; set; } // Currently just uses the creation time from account
     private long OnlineTime { get; set; }
     public bool IsDeleted;
@@ -67,10 +66,12 @@ public class Player
     public List<PrestigeMission> PrestigeMissions = new();
 
     public Stats Stats;
+
     public IFieldObject<Mount> Mount;
-    public IFieldObject<Pet> Pet;
     public IFieldObject<GuideObject> Guide;
     public IFieldObject<Instrument> Instrument;
+
+    public Item ActivePet;
 
     public long HouseStorageAccessTime;
     public long HouseDoctorAccessTime;
@@ -127,6 +128,7 @@ public class Player
     public HairInventory HairInventory = new();
     public TradeInventory TradeInventory;
     public ItemEnchant ItemEnchant; // Current item player is enchanting
+    public List<Wardrobe> Wardrobes = new();
 
     public List<Mail> Mailbox = new();
 
@@ -152,6 +154,7 @@ public class Player
 
     public CancellationTokenSource OnlineCTS;
     public Task OnlineTimeThread;
+    public Task TimeSyncTask;
 
     public List<GatheringCount> GatheringCount;
 
@@ -162,11 +165,14 @@ public class Player
 
     public List<string> GmFlags = new();
     public int DungeonSessionId = -1;
+    public int MushkingRoyaleSession = -1;
 
     public List<PlayerTrigger> Triggers = new();
 
     public Character FieldPlayer;
 
+    private Dictionary<int, short> PassiveSkillEffects = new();
+    private Dictionary<int, SkillLevel> EnabledPassiveSkillEffects = new();
     public Player() { }
 
     // Initializes all values to be saved into the database
@@ -293,18 +299,38 @@ public class Player
         }
     }
 
-    public void Warp(int mapId, CoordF? coord = null, CoordF? rotation = null, long instanceId = 1)
+    public void Warp(int mapId, CoordF? coord = null, CoordF? rotation = null, long instanceId = -1)
     {
-        UpdateCoords(mapId, instanceId, coord, rotation);
-
-        if (coord is null && rotation is null)
+        if (MapMetadataStorage.GetMetadata(mapId).Property.IsTutorialMap)
         {
-            GetSpawnCoords(mapId);
+            WarpGameToGame(mapId, instanceId, coord, rotation);
+            return;
         }
+
+        if (mapId == MapId)
+        {
+            if (coord is null || rotation is null)
+            {
+                MapPlayerSpawn spawn = GetSpawnCoords(mapId);
+                if (spawn is null)
+                {
+                    Move(SavedCoord, SavedRotation);
+                    return;
+                }
+
+                Move(spawn.Coord.ToFloat(), spawn.Rotation.ToFloat());
+                return;
+            }
+
+            Move((CoordF) coord, (CoordF) rotation);
+            return;
+        }
+
+        UpdateCoords(mapId, instanceId, coord, rotation);
 
         Session.FieldManager.RemovePlayer(this);
         DatabaseManager.Characters.Update(this);
-        Session.Send(RequestFieldEnterPacket.RequestEnter(FieldPlayer));
+        Session.Send(FieldEnterPacket.RequestEnter(FieldPlayer));
         Party?.BroadcastPacketParty(PartyPacket.UpdateMemberLocation(this));
         Guild?.BroadcastPacketGuild(GuildPacket.UpdateMemberLocation(Name, MapId));
         foreach (Club club in Clubs)
@@ -322,13 +348,21 @@ public class Player
     {
         UpdateCoords(mapId, instanceId, coord, rotation);
 
-        string ipAddress = Environment.GetEnvironmentVariable("IP");
+        string ipAddress = Session.IsLocalHost() ? Constant.LocalHost : Environment.GetEnvironmentVariable("IP");
         int port = int.Parse(Environment.GetEnvironmentVariable("GAME_PORT"));
         IPEndPoint endpoint = new(IPAddress.Parse(ipAddress), port);
 
         IsMigrating = true;
 
         Session.SendFinal(MigrationPacket.GameToGame(endpoint, this), logoutNotice: false);
+    }
+
+    public void Move(CoordF coord, CoordF rotation, bool isTrigger = false)
+    {
+        FieldPlayer.Coord = coord;
+        FieldPlayer.Rotation = rotation;
+
+        Session.Send(UserMoveByPortalPacket.Move(FieldPlayer, coord, rotation, isTrigger));
     }
 
     public Dictionary<ItemSlot, Item> GetEquippedInventory(InventoryTab tab)
@@ -345,12 +379,12 @@ public class Player
     {
         return Task.Run(async () =>
         {
-            while (Session != null)
+            while (Session is not null)
             {
                 Session.Send(TimeSyncPacket.Request());
-                await Task.Delay(TimeSpan.FromSeconds(1));
+                await Task.Delay(TimeSpan.FromSeconds(1), OnlineCTS.Token);
             }
-        });
+        }, OnlineCTS.Token);
     }
 
     public Task ClientTickSyncLoop()
@@ -424,6 +458,12 @@ public class Player
 
     public void FallDamage()
     {
+        MapUi mapUi = MapMetadataStorage.GetMapUi(MapId);
+        if (!mapUi.EnableFallDamage)
+        {
+            return;
+        }
+
         long currentHp = Stats[StatAttribute.Hp].TotalLong;
         int fallDamage = (int) (currentHp * Math.Clamp(currentHp * 4 / 100 - 1, 0, 25) / 100); // TODO: Create accurate damage model
         FieldPlayer.ConsumeHp(fallDamage);
@@ -488,18 +528,28 @@ public class Player
         }
     }
 
-    private void GetSpawnCoords(int mapId)
+    public bool TryGetWardrobe(int index, out Wardrobe wardrobe)
+    {
+        if (Wardrobes.ElementAtOrDefault(index) is null)
+        {
+            wardrobe = null;
+            return false;
+        }
+
+        wardrobe = Wardrobes[index];
+        return true;
+    }
+
+    private MapPlayerSpawn GetSpawnCoords(int mapId)
     {
         MapPlayerSpawn spawn = MapEntityMetadataStorage.GetRandomPlayerSpawn(mapId);
         if (spawn is null)
         {
             Session.SendNotice($"Could not find a spawn for map {mapId}");
-            return;
+            return null;
         }
 
-        SavedCoord = spawn.Coord.ToFloat();
-        SafeBlock = spawn.Coord.ToFloat();
-        SavedRotation = spawn.Rotation.ToFloat();
+        return spawn;
     }
 
     private void UpdateCoords(int mapId, long instanceId, CoordF? coord = null, CoordF? rotation = null)
@@ -521,8 +571,23 @@ public class Player
             SavedRotation = (CoordF) rotation;
         }
 
+        if (coord is null && rotation is null)
+        {
+            MapPlayerSpawn spawn = GetSpawnCoords(mapId);
+            if (spawn is not null)
+            {
+                SavedCoord = spawn.Coord;
+                SavedRotation = spawn.Rotation;
+                SafeBlock = SavedCoord;
+            }
+        }
+
         MapId = mapId;
-        InstanceId = instanceId;
+
+        if (instanceId != -1)
+        {
+            InstanceId = instanceId;
+        }
 
         if (!UnlockedMaps.Contains(MapId))
         {
@@ -547,86 +612,75 @@ public class Player
         GearScore += value;
     }
 
-    public void DecreaseStats(Item item)
+    public void ComputeStatContribution(ItemStats stats)
     {
-        foreach (ItemStat stat in item.Stats.Constants.Values)
+        foreach (ItemStat stat in stats.Constants.Values)
         {
-            Stats[stat.ItemAttribute].DecreaseBonus(stat.Flat + (int) (1000 * stat.Rate));
+            Stats.AddStat(stat.ItemAttribute, stat.AttributeType, stat.Flat, stat.Rate);
         }
 
-        foreach (ItemStat stat in item.Stats.Statics.Values)
+        foreach (ItemStat stat in stats.Statics.Values)
         {
-            Stats[stat.ItemAttribute].DecreaseBonus(stat.Flat + (int) (1000 * stat.Rate));
+            Stats.AddStat(stat.ItemAttribute, stat.AttributeType, stat.Flat, stat.Rate);
         }
 
-        foreach (ItemStat stat in item.Stats.Randoms.Values)
+        foreach (ItemStat stat in stats.Randoms.Values)
         {
-            Stats[stat.ItemAttribute].DecreaseBonus(stat.Flat + (int) (1000 * stat.Rate));
+            Stats.AddStat(stat.ItemAttribute, stat.AttributeType, stat.Flat, stat.Rate);
         }
 
-        foreach (ItemStat stat in item.Stats.Enchants.Values)
+        foreach (ItemStat stat in stats.Enchants.Values)
         {
-            int constantValue = item.Stats.Constants.TryGetValue(stat.ItemAttribute, out ItemStat itemStat) ? itemStat.Flat : 0;
-            int staticValue = item.Stats.Statics.TryGetValue(stat.ItemAttribute, out ItemStat itemStat2) ? itemStat2.Flat : 0;
+            int constantValue = stats.Constants.TryGetValue(stat.ItemAttribute, out ItemStat itemStat) ? itemStat.Flat : 0;
+            int staticValue = stats.Statics.TryGetValue(stat.ItemAttribute, out ItemStat itemStat2) ? itemStat2.Flat : 0;
             int totalStat = constantValue + staticValue;
-            Stats[stat.ItemAttribute].DecreaseBonus((int) (totalStat * stat.Rate));
+            Stats[stat.ItemAttribute].Add((int) (totalStat * stat.Rate));
         }
 
-        UpdateGearScore(item, -item.GearScore);
-
-        Session.Send(StatPacket.SetStats(FieldPlayer));
-    }
-
-    public void ComputeStatContribution(Item item)
-    {
-        foreach (ItemStat stat in item.Stats.Constants.Values)
+        foreach (ItemStat stat in stats.LimitBreakEnchants.Values)
         {
-            Stats[stat.ItemAttribute].IncreaseBonus(stat.Flat + (int) (1000 * stat.Rate));
-        }
+            if (stat.ItemAttribute == StatAttribute.MinWeaponAtk || stat.ItemAttribute == StatAttribute.MaxWeaponAtk)
+            {
+                int constantValue = stats.Constants.TryGetValue(stat.ItemAttribute, out ItemStat itemStat) ? itemStat.Flat : 0;
+                int staticValue = stats.Statics.TryGetValue(stat.ItemAttribute, out ItemStat itemStat2) ? itemStat2.Flat : 0;
+                int totalStat = constantValue + staticValue;
+                Stats[stat.ItemAttribute].Add((int) (totalStat * stat.Rate));
 
-        foreach (ItemStat stat in item.Stats.Statics.Values)
-        {
-            Stats[stat.ItemAttribute].IncreaseBonus(stat.Flat + (int) (1000 * stat.Rate));
-        }
+                continue;
+            }
 
-        foreach (ItemStat stat in item.Stats.Randoms.Values)
-        {
-            Stats[stat.ItemAttribute].IncreaseBonus(stat.Flat + (int) (1000 * stat.Rate));
-        }
-
-        foreach (ItemStat stat in item.Stats.Enchants.Values)
-        {
-            int constantValue = item.Stats.Constants.TryGetValue(stat.ItemAttribute, out ItemStat itemStat) ? itemStat.Flat : 0;
-            int staticValue = item.Stats.Statics.TryGetValue(stat.ItemAttribute, out ItemStat itemStat2) ? itemStat2.Flat : 0;
-            int totalStat = constantValue + staticValue;
-            Stats[stat.ItemAttribute].IncreaseBonus((int) (totalStat * stat.Rate));
+            Stats.AddStat(stat.ItemAttribute, stat.AttributeType, stat.Flat, stat.Rate);
         }
     }
 
-    public void IncreaseStats(Item item)
+    public void AddStats()
     {
-        ComputeStatContribution(item);
 
-        UpdateGearScore(item, item.GearScore);
-
-        Session.Send(StatPacket.SetStats(FieldPlayer));
-    }
-
-    public void RecomputeStats()
-    {
-        Stat hp = Stats[StatAttribute.Hp];
-        Stat spirit = Stats[StatAttribute.Spirit];
-        Stat stamina = Stats[StatAttribute.Stamina];
-
-        long hpValue = hp.TotalLong;
-        long spiritValue = spirit.TotalLong;
-        long staminaValue = stamina.TotalLong;
-
-        Stats.RecomputeStats(this);
+        Stats = new(Job);
+        Stats.AddBaseStats(this, Levels.Level);
+        Stats.RecomputeAllocations(StatPointDistribution);
 
         foreach ((ItemSlot slot, Item item) in Inventory.Equips)
         {
-            ComputeStatContribution(item);
+            ComputeStatContribution(item.Stats);
+
+            foreach (GemSocket socket in item.GemSockets.Sockets)
+            {
+                if (socket.Gemstone != null)
+                {
+                    ComputeStatContribution(socket.Gemstone.Stats);
+                }
+            }
+        }
+
+        if (ActivePet != null)
+        {
+            if (ActivePet.PetInfo != null)
+            {
+                Stats[StatAttribute.PetBonusAtk].Add(0, (float) ActivePet.PetInfo.Level - 1);
+            }
+
+            ComputeStatContribution(ActivePet.Stats);
         }
 
         foreach (AdditionalEffect effect in AdditionalEffects.Effects)
@@ -634,31 +688,121 @@ public class Player
             FieldPlayer.IncreaseStats(effect);
         }
 
-        hp.TotalLong = Math.Min(hp.BonusLong, hpValue);
-        spirit.TotalLong = Math.Min(spirit.BonusLong, spiritValue);
-        stamina.TotalLong = Math.Min(stamina.BonusLong, staminaValue);
+        Stats.ComputeStatBonuses();
 
-        Session.Send(StatPacket.SetStats(FieldPlayer));
+        if (Job == Job.Runeblade)
+        {
+            Stats.Data[StatAttribute.Int].AddBonus((long) (0.7f * Stats.Data[StatAttribute.Str].TotalLong));
+        }
+
+        Stats.AddAttackBonus(this);
     }
 
     public void EffectAdded(AdditionalEffect effect)
     {
-        Session.Send(StatPacket.SetStats(FieldPlayer));
+
     }
 
     public void EffectRemoved(AdditionalEffect effect)
     {
-        Session.Send(StatPacket.SetStats(FieldPlayer));
+
     }
 
     public void InitializeEffects()
     {
+        AdditionalEffects.Parent = FieldPlayer;
+
         foreach (Item item in Inventory.LapenshardStorage)
         {
             if (item != null)
             {
                 LapenshardHandler.AddEffects(this, item);
             }
+        }
+
+        UpdatePassiveSkills();
+    }
+
+    public void AddEffects(ItemAdditionalEffectMetadata effects)
+    {
+        if (effects?.Level == null || effects?.Id == null)
+        {
+            return;
+        }
+
+        for (int i = 0; i < effects.Level.Length; ++i)
+        {
+            AdditionalEffects.AddEffect(new(effects.Id[i], effects.Level[i]));
+        }
+    }
+
+    public void RemoveEffects(ItemAdditionalEffectMetadata effects)
+    {
+        if (effects?.Level == null || effects?.Id == null)
+        {
+            return;
+        }
+
+        for (int i = 0; i < effects.Level.Length; ++i)
+        {
+            AdditionalEffects.RemoveEffect(effects.Id[i], effects.Level[i]);
+        }
+    }
+
+    public void UpdatePassiveSkills()
+    {
+        foreach ((int id, short level) in PassiveSkillEffects)
+        {
+            PassiveSkillEffects[id] = -1;
+        }
+
+        foreach ((int id, short level) in SkillTabs[(int) ActiveSkillTabId - 1].GetSkillsByType(SkillType.Passive))
+        {
+            PassiveSkillEffects[id] = level;
+        }
+
+        EffectTriggers triggers = new()
+        {
+            Caster = FieldPlayer,
+            Owner = FieldPlayer
+        };
+
+        foreach ((int id, short level) in PassiveSkillEffects)
+        {
+            SkillLevel skillLevel;
+
+            if (level < 1)
+            {
+                if (!EnabledPassiveSkillEffects.TryGetValue(id, out skillLevel))
+                {
+                    continue;
+                }
+
+                if (skillLevel.ConditionSkills == null)
+                {
+                    continue;
+                }
+
+                foreach (SkillCondition trigger in skillLevel.ConditionSkills)
+                {
+                    foreach (int skillId in trigger.SkillId)
+                    {
+                        AdditionalEffects.RemoveEffect(skillId, level);
+                    }
+                }
+
+                EnabledPassiveSkillEffects.Remove(id);
+
+                continue;
+            }
+
+            SkillMetadata skill = SkillMetadataStorage.GetSkill(id);
+            skillLevel = skill.SkillLevels.FirstOrDefault(skillLevel => skillLevel.Level == level, skill.SkillLevels[0]);
+
+            EnabledPassiveSkillEffects[id] = skillLevel;
+
+            //AdditionalEffects.AddEffect(new(id, level));
+            FieldPlayer.SkillTriggerHandler.FireTriggers(skillLevel.ConditionSkills, triggers);
         }
     }
 }

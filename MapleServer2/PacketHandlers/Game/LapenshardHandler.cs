@@ -12,7 +12,7 @@ public class LapenshardHandler : GamePacketHandler<LapenshardHandler>
 {
     public override RecvOp OpCode => RecvOp.ItemLapenshard;
 
-    private enum LapenshardMode : byte
+    private enum Mode : byte
     {
         Equip = 0x1,
         Unequip = 0x2,
@@ -30,22 +30,22 @@ public class LapenshardHandler : GamePacketHandler<LapenshardHandler>
 
     public override void Handle(GameSession session, PacketReader packet)
     {
-        LapenshardMode mode = (LapenshardMode) packet.ReadByte();
+        Mode mode = (Mode) packet.ReadByte();
         switch (mode)
         {
-            case LapenshardMode.Equip:
+            case Mode.Equip:
                 HandleEquip(session, packet);
                 break;
-            case LapenshardMode.Unequip:
+            case Mode.Unequip:
                 HandleUnequip(session, packet);
                 break;
-            case LapenshardMode.AddFusion:
+            case Mode.AddFusion:
                 HandleAddFusion(session, packet);
                 break;
-            case LapenshardMode.AddCatalyst:
+            case Mode.AddCatalyst:
                 HandleAddCatalyst(session, packet);
                 break;
-            case LapenshardMode.Fusion:
+            case Mode.Fusion:
                 HandleFusion(session, packet);
                 break;
             default:
@@ -61,10 +61,7 @@ public class LapenshardHandler : GamePacketHandler<LapenshardHandler>
             return;
         }
 
-        for (int i = 0; i < lapenshard.AdditionalEffects.Id.Length; i++)
-        {
-            player.AdditionalEffects.AddEffect(lapenshard.AdditionalEffects.Id[i], lapenshard.AdditionalEffects.Level[i]);
-        }
+        player.AddEffects(lapenshard.AdditionalEffects);
     }
 
     public static void RemoveEffects(Player player, Item lapenshard)
@@ -74,10 +71,7 @@ public class LapenshardHandler : GamePacketHandler<LapenshardHandler>
             return;
         }
 
-        for (int i = 0; i < lapenshard.AdditionalEffects.Id.Length; i++)
-        {
-            player.AdditionalEffects.RemoveEffect(lapenshard.AdditionalEffects.Id[i], lapenshard.AdditionalEffects.Level[i]);
-        }
+        player.RemoveEffects(lapenshard.AdditionalEffects);
     }
 
     private static void HandleEquip(GameSession session, PacketReader packet)

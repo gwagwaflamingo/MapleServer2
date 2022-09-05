@@ -9,7 +9,7 @@ namespace MapleServer2.Packets;
 
 public static class NpcTalkPacket
 {
-    private enum NpcTalkMode : byte
+    private enum Mode : byte
     {
         Close = 0x00,
         Respond = 0x01,
@@ -20,8 +20,8 @@ public static class NpcTalkPacket
 
     public static PacketWriter Respond(IFieldObject<NpcMetadata> npc, DialogType dialogType, int contentIndex, ResponseSelection responseSelection, int scriptId)
     {
-        PacketWriter pWriter = PacketWriter.Of(SendOp.NPCTalk);
-        pWriter.Write(NpcTalkMode.Respond);
+        PacketWriter pWriter = PacketWriter.Of(SendOp.NpcTalk);
+        pWriter.Write(Mode.Respond);
         pWriter.WriteInt(npc.ObjectId);
         pWriter.Write(dialogType);
         pWriter.WriteInt(scriptId);
@@ -33,8 +33,8 @@ public static class NpcTalkPacket
 
     public static PacketWriter ContinueChat(int scriptId, DialogType dialogType, ResponseSelection responseSelection, int contentIndex, int questId = 0)
     {
-        PacketWriter pWriter = PacketWriter.Of(SendOp.NPCTalk);
-        pWriter.Write(NpcTalkMode.Continue);
+        PacketWriter pWriter = PacketWriter.Of(SendOp.NpcTalk);
+        pWriter.Write(Mode.Continue);
         pWriter.Write(dialogType);
         pWriter.WriteInt(questId);
         pWriter.WriteInt(scriptId);
@@ -46,8 +46,8 @@ public static class NpcTalkPacket
 
     public static PacketWriter Action(ActionType actionType, string window = "", string parameters = "", int portalId = 0, Item item = null)
     {
-        PacketWriter pWriter = PacketWriter.Of(SendOp.NPCTalk);
-        pWriter.Write(NpcTalkMode.Action);
+        PacketWriter pWriter = PacketWriter.Of(SendOp.NpcTalk);
+        pWriter.Write(Mode.Action);
         pWriter.Write(actionType);
         switch (actionType)
         {
@@ -72,8 +72,8 @@ public static class NpcTalkPacket
 
     public static PacketWriter CustomText(string script, string voiceId, string illustration)
     {
-        PacketWriter pWriter = PacketWriter.Of(SendOp.NPCTalk);
-        pWriter.Write(NpcTalkMode.CustomText);
+        PacketWriter pWriter = PacketWriter.Of(SendOp.NpcTalk);
+        pWriter.Write(Mode.CustomText);
         pWriter.WriteUnicodeString(script);
         pWriter.WriteUnicodeString(voiceId);
         pWriter.WriteUnicodeString(illustration);
@@ -82,8 +82,8 @@ public static class NpcTalkPacket
 
     public static PacketWriter Close()
     {
-        PacketWriter pWriter = PacketWriter.Of(SendOp.NPCTalk);
-        pWriter.Write(NpcTalkMode.Close);
+        PacketWriter pWriter = PacketWriter.Of(SendOp.NpcTalk);
+        pWriter.Write(Mode.Close);
 
         return pWriter;
     }

@@ -77,6 +77,12 @@ public class ResponseKeyHandler : CommonPacketHandler<ResponseKeyHandler>
         foreach (ClubMember member in player.ClubMembers)
         {
             Club club = GameServer.ClubManager.GetClubById(member.ClubId);
+
+            if (club is null)
+            {
+                continue;
+            }
+
             club.Members.First(x => x.Player.CharacterId == player.CharacterId).Player = player;
             club.BroadcastPacketClub(ClubPacket.UpdateClub(club));
             if (!player.IsMigrating)
@@ -202,7 +208,7 @@ public class ResponseKeyHandler : CommonPacketHandler<ResponseKeyHandler>
         session.Send(PvpPacket.Mode16());
         session.Send(PvpPacket.Mode17());
 
-        session.Send(ResponsePetPacket.Mode07());
+        session.Send(PetPacket.LoadAlbum());
         // LegionBattle (0xF6)
         // CharacterAbility
         // E1 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
@@ -229,7 +235,7 @@ public class ResponseKeyHandler : CommonPacketHandler<ResponseKeyHandler>
         // 0xF0, ResponsePet P(0F 01)
         // RequestFieldEnter
         //session.Send("16 00 00 41 75 19 03 00 01 8A 42 0F 00 00 00 00 00 00 C0 28 C4 00 40 03 44 00 00 16 44 00 00 00 00 00 00 00 00 55 FF 33 42 E8 49 01 00".ToByteArray());
-        session.Send(RequestFieldEnterPacket.RequestEnter(player.FieldPlayer));
+        session.Send(FieldEnterPacket.RequestEnter(player.FieldPlayer));
 
         Party party = GameServer.PartyManager.GetPartyByMember(player.CharacterId);
         if (party != null)
@@ -250,7 +256,9 @@ public class ResponseKeyHandler : CommonPacketHandler<ResponseKeyHandler>
         // SendUgc: 15 01 00 00 00 00 00 00 00 00 00 00 00 4B 00 00 00
         session.Send(HomeCommandPacket.LoadHome(player));
 
-        player.TimeSyncLoop();
+        player.OnlineTimeThread = player.OnlineTimer();
+        player.TimeSyncTask = player.TimeSyncLoop();
+
         session.Send(TimeSyncPacket.SetSessionServerTick(0));
         //session.Send("B9 00 00 E1 0F 26 89 7F 98 3C 26 00 00 00 00 00 00 00 00".ToByteArray());
         session.Send(ServerEnterPacket.Confirm());

@@ -11,18 +11,18 @@ public class GlobalPortalHandler : GamePacketHandler<GlobalPortalHandler>
 {
     public override RecvOp OpCode => RecvOp.GlobalPortal;
 
-    private enum GlobalPortalMode : byte
+    private enum Mode : byte
     {
         Enter = 0x2
     }
 
     public override void Handle(GameSession session, PacketReader packet)
     {
-        GlobalPortalMode mode = (GlobalPortalMode) packet.ReadByte();
+        Mode mode = (Mode) packet.ReadByte();
 
         switch (mode)
         {
-            case GlobalPortalMode.Enter:
+            case Mode.Enter:
                 HandleEnter(session, packet);
                 break;
             default:
@@ -91,6 +91,6 @@ public class GlobalPortalHandler : GamePacketHandler<GlobalPortalHandler>
 
         session.Player.Mount = null;
         MapPortal portal = MapEntityMetadataStorage.GetPortals((int) map).FirstOrDefault(portal => portal.Id == 1);
-        session.Player.Warp(map, portal.Coord.ToFloat(), portal.Rotation.ToFloat());
+        session.Player.Warp(map, portal?.Coord.ToFloat() ?? new(), portal?.Rotation.ToFloat() ?? new());
     }
 }

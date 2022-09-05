@@ -61,8 +61,9 @@ public class GameSession : Session
         FieldManager.RemovePlayer(Player);
         GameServer.PlayerManager.RemovePlayer(Player);
 
-        Player.OnlineCTS.Cancel();
+        Player.OnlineCTS?.Cancel();
         Player.OnlineTimeThread = null;
+        Player.TimeSyncTask = null;
 
         CoordF safeCoord = Player.SafeBlock;
         safeCoord.Z += Block.BLOCK_SIZE;

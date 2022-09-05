@@ -2,6 +2,7 @@
 using Maple2.Trigger.Enum;
 using Maple2Storage.Types.Metadata;
 using MapleServer2.Data.Static;
+using MapleServer2.Database;
 using MapleServer2.Enums;
 using MapleServer2.Managers;
 using MapleServer2.Packets;
@@ -42,7 +43,7 @@ public partial class TriggerContext
                         break;
                     case "PickQuiz":
                         // TODO: Use args to find a tier of a question
-                        widget.OXQuizQuestion = OXQuizMetadataStorage.GetQuestion();
+                        widget.OXQuizQuestion = DatabaseManager.OxQuizQuestion.GetRandomQuestion();
                         break;
                     case "ShowQuiz":
                         Field.BroadcastPacket(QuizEventPacket.Question(widget.OXQuizQuestion.Category, widget.OXQuizQuestion.QuestionText, int.Parse(args)));
@@ -104,7 +105,7 @@ public partial class TriggerContext
 
                 foreach (IFieldObject<Player> player in Field.State.Players.Values)
                 {
-                    if (FieldManager.IsPlayerInBox(box, player))
+                    if (FieldManager.IsActorInBox(box, player))
                     {
                         player.Value.Session.Send(SystemSoundPacket.Play(sound));
                     }
@@ -182,7 +183,7 @@ public partial class TriggerContext
 
             foreach (IFieldObject<Player> player in Field.State.Players.Values)
             {
-                if (!FieldManager.IsPlayerInBox(triggerBox, player))
+                if (!FieldManager.IsActorInBox(triggerBox, player))
                 {
                     player.Value.Session.Send(MassiveEventPacket.TextBanner(type, script, duration));
                 }
@@ -200,7 +201,7 @@ public partial class TriggerContext
 
         foreach (IFieldObject<Player> player in Field.State.Players.Values)
         {
-            if (FieldManager.IsPlayerInBox(triggerBox, player))
+            if (FieldManager.IsActorInBox(triggerBox, player))
             {
                 player.Value.Session.Send(MassiveEventPacket.TextBanner(type, script, duration));
             }
@@ -227,6 +228,7 @@ public partial class TriggerContext
 
     public void SideNpcTalk(int npcId, string illust, int duration, string script, string voice, SideNpcTalkType type, string usm)
     {
+        Field.BroadcastPacket(TriggerPacket.SidePopUp(type, duration, illust, voice, script));
     }
 
     public void ShowCaption(CaptionType type, string title, string script, Align align, float offsetRateX, float offsetRateY, int duration, float scale)

@@ -1,6 +1,8 @@
 ﻿using Maple2Storage.Enums;
+using Maple2Storage.Types.Metadata;
 using MaplePacketLib2.Tools;
 using MapleServer2.Constants;
+using MapleServer2.Data.Static;
 using MapleServer2.Enums;
 using MapleServer2.Managers;
 using MapleServer2.Managers.Actors;
@@ -14,7 +16,7 @@ public class RideHandler : GamePacketHandler<RideHandler>
 {
     public override RecvOp OpCode => RecvOp.RequestRide;
 
-    private enum RideMode : byte
+    private enum Mode : byte
     {
         StartRide = 0x0,
         StopRide = 0x1,
@@ -25,23 +27,23 @@ public class RideHandler : GamePacketHandler<RideHandler>
 
     public override void Handle(GameSession session, PacketReader packet)
     {
-        RideMode mode = (RideMode) packet.ReadByte();
+        Mode mode = (Mode) packet.ReadByte();
 
         switch (mode)
         {
-            case RideMode.StartRide:
+            case Mode.StartRide:
                 HandleStartRide(session, packet);
                 break;
-            case RideMode.StopRide:
+            case Mode.StopRide:
                 HandleStopRide(session, packet);
                 break;
-            case RideMode.ChangeRide:
+            case Mode.ChangeRide:
                 HandleChangeRide(session, packet);
                 break;
-            case RideMode.StartMultiPersonRide:
+            case Mode.StartMultiPersonRide:
                 HandleStartMultiPersonRide(session, packet);
                 break;
-            case RideMode.StopMultiPersonRide:
+            case Mode.StopMultiPersonRide:
                 HandleStopMultiPersonRide(session);
                 break;
             default:
@@ -57,6 +59,13 @@ public class RideHandler : GamePacketHandler<RideHandler>
         packet.ReadLong();
         long mountUid = packet.ReadLong();
         // [46-0s] (UgcPacketHelper.Ugc()) but client doesn't set this data?
+
+        MapUi mapUi = MapMetadataStorage.GetMapUi(session.Player.MapId);
+        if (!mapUi.EnableMount)
+        {
+            session.Send(NoticePacket.Notice(SystemNotice.ErrCannotUseHere, NoticeType.Chat | NoticeType.FastText));
+            return;
+        }
 
         if (type == RideType.UseItem && !session.Player.Inventory.HasItem(mountUid))
         {
@@ -155,7 +164,7 @@ public class RideHandler : GamePacketHandler<RideHandler>
         }
 
         session.FieldManager.BroadcastPacket(MountPacket.StopTwoPersonRide(otherPlayer.ObjectId, session.Player.FieldPlayer.ObjectId));
-        session.Send(UserMoveByPortalPacket.Move(session.Player.FieldPlayer, otherPlayer.Coord, otherPlayer.Rotation));
+        session.Player.Move(otherPlayer.Coord, otherPlayer.Rotation);
         session.Player.Mount = null;
         if (otherPlayer.Value.Mount != null)
         {

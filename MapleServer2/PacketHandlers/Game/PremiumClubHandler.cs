@@ -13,7 +13,7 @@ public class PremiumClubHandler : GamePacketHandler<PremiumClubHandler>
 {
     public override RecvOp OpCode => RecvOp.PremiumClub;
 
-    private enum PremiumClubMode : byte
+    private enum Mode : byte
     {
         Open = 0x1,
         ClaimItems = 0x2,
@@ -23,20 +23,20 @@ public class PremiumClubHandler : GamePacketHandler<PremiumClubHandler>
 
     public override void Handle(GameSession session, PacketReader packet)
     {
-        PremiumClubMode mode = (PremiumClubMode) packet.ReadByte();
+        Mode mode = (Mode) packet.ReadByte();
 
         switch (mode)
         {
-            case PremiumClubMode.Open:
+            case Mode.Open:
                 HandleOpen(session);
                 break;
-            case PremiumClubMode.ClaimItems:
+            case Mode.ClaimItems:
                 HandleClaimItems(session, packet);
                 break;
-            case PremiumClubMode.OpenPurchaseWindow:
+            case Mode.OpenPurchaseWindow:
                 HandleOpenPurchaseWindow(session);
                 break;
-            case PremiumClubMode.PurchaseMembership:
+            case Mode.PurchaseMembership:
                 HandlePurchaseMembership(session, packet);
                 break;
             default:
@@ -118,7 +118,17 @@ public class PremiumClubHandler : GamePacketHandler<PremiumClubHandler>
             account.VIPExpiration += vipTime;
             session.Send(NoticePacket.Notice(SystemNotice.PremiumExtended, NoticeType.Chat | NoticeType.FastText));
         }
-        session.Send(BuffPacket.SendBuff(0, new(100000014, session.Player.FieldPlayer.ObjectId, session.Player.FieldPlayer.ObjectId, 1, (int) vipTime, 1)));
+
+        List<PremiumClubEffectMetadata> effectMetadatas = PremiumClubEffectMetadataStorage.GetBuffs();
+        foreach (PremiumClubEffectMetadata effect in effectMetadatas)
+        {
+            session.Player.FieldPlayer.AdditionalEffects.AddEffect(new(effect.EffectId, effect.EffectLevel)
+            {
+                Duration = (int) (Math.Min(account.VIPExpiration - TimeInfo.Now(), 0x0FFFFFFF)),
+                IsBuff = true
+            });
+        }
+
         session.Send(PremiumClubPacket.ActivatePremium(session.Player.FieldPlayer, account.VIPExpiration));
     }
 }

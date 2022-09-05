@@ -43,7 +43,7 @@ public class ItemParser : Exporter<List<ItemMetadata>>
             {
                 Id = id,
                 Name = name,
-                Tab = GetTab(property.type, property.subtype, property.skin != 0),
+                Tab = GetTab(property.type, property.subtype, property.skin),
                 Gem = new()
                 {
                     Gem = (GemSlot) data.gem.system
@@ -68,18 +68,18 @@ public class ItemParser : Exporter<List<ItemMetadata>>
                 },
                 Limit = new()
                 {
-                    JobRequirements = limit.jobLimit.ToList(),
+                    JobRequirements = limit.jobLimit.Length == 0 ? new() { 0 } : limit.jobLimit.ToList(),
                     JobRecommendations = limit.recommendJobs.ToList(),
                     LevelLimitMin = limit.levelLimit,
                     LevelLimitMax = limit.levelLimitMax,
                     Gender = (Gender) limit.genderLimit,
                     TransferType = (TransferType) limit.transferType,
-                    Sellable = limit.shopSell == 1,
-                    Breakable = limit.enableBreak == 1,
-                    MeretMarketListable = limit.enableRegisterMeratMarket == 1,
-                    DisableEnchant = limit.exceptEnchant == 1,
+                    Sellable = limit.shopSell,
+                    Breakable = limit.enableBreak,
+                    MeretMarketListable = limit.enableRegisterMeratMarket,
+                    DisableEnchant = limit.exceptEnchant,
                     TradeLimitByRarity = limit.tradeLimitRank,
-                    VipOnly = limit.vip == 1
+                    VipOnly = limit.vip
                 },
                 Skill = new()
                 {
@@ -169,6 +169,7 @@ public class ItemParser : Exporter<List<ItemMetadata>>
             {
                 metadata.Option.OptionLevelFactor = (float) data.option.globalOptionLevelFactor;
             }
+
             // if globalTransferType is present, override with these values
             if (limit.globalTransferType is not null)
             {
@@ -191,29 +192,23 @@ public class ItemParser : Exporter<List<ItemMetadata>>
             // Item functions
             ParseFunctions(function, metadata);
 
-            Slot firstSlot = data.slots.slot.First();
-            bool slotResult = Enum.TryParse(firstSlot.name, out metadata.Slot);
-            if (!slotResult && !string.IsNullOrEmpty(firstSlot.name))
+            Slots slots = data.slots;
+            metadata.Slots = new();
+            foreach (Slot slot in slots.slot)
             {
-                Console.WriteLine($"Failed to parse item slot for {id}: {firstSlot.name}");
-            }
-
-            if (data.slots.slot.Count > 1)
-            {
-                switch (metadata.Slot)
+                bool slotResult = Enum.TryParse(slot.name, out ItemSlot itemSlot);
+                if (!slotResult && !string.IsNullOrEmpty(slot.name))
                 {
-                    case ItemSlot.CL or ItemSlot.PA:
-                        metadata.IsDress = true;
-                        break;
-                    case ItemSlot.RH or ItemSlot.LH:
-                        metadata.IsTwoHand = true;
-                        break;
+                    Console.WriteLine($"Failed to parse item slot for {id}: {slot.name}");
+                    continue;
                 }
-            }
 
-            if (metadata.Slot is ItemSlot.HR)
-            {
-                ParseHair(firstSlot, metadata);
+                if (itemSlot == ItemSlot.HR)
+                {
+                    ParseHair(slot, metadata);
+                }
+
+                metadata.Slots.Add(itemSlot);
             }
 
             if (!string.IsNullOrEmpty(housing.categoryTag))

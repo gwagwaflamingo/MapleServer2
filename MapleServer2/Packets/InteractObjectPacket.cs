@@ -7,7 +7,7 @@ namespace MapleServer2.Packets;
 
 public static class InteractObjectPacket
 {
-    private enum InteractObjectMode : byte
+    private enum Mode : byte
     {
         Update = 0x04,
         Use = 0x05,
@@ -21,7 +21,7 @@ public static class InteractObjectPacket
     public static PacketWriter Update(InteractObject interactObject)
     {
         PacketWriter pWriter = PacketWriter.Of(SendOp.InteractObject);
-        pWriter.Write(InteractObjectMode.Update);
+        pWriter.Write(Mode.Update);
         pWriter.WriteString(interactObject.Id);
         pWriter.Write(interactObject.State);
         pWriter.Write(interactObject.Type);
@@ -32,7 +32,7 @@ public static class InteractObjectPacket
     public static PacketWriter Use(InteractObject interactObject, short result = 0, int numDrops = 0)
     {
         PacketWriter pWriter = PacketWriter.Of(SendOp.InteractObject);
-        pWriter.Write(InteractObjectMode.Use);
+        pWriter.Write(Mode.Use);
         pWriter.WriteString(interactObject.Id);
         pWriter.Write(interactObject.Type);
 
@@ -48,35 +48,37 @@ public static class InteractObjectPacket
     public static PacketWriter Set(InteractObject interactObject)
     {
         PacketWriter pWriter = PacketWriter.Of(SendOp.InteractObject);
-        pWriter.Write(InteractObjectMode.Set);
+        pWriter.Write(Mode.Set);
         pWriter.WriteInt(interactObject.InteractId);
         pWriter.Write(interactObject.State);
         return pWriter;
     }
 
-    public static PacketWriter LoadObjects(List<InteractObject> interactObjects)
+    public static PacketWriter LoadObjects(List<IFieldObject<InteractObject>> interactObjects)
     {
         PacketWriter pWriter = PacketWriter.Of(SendOp.InteractObject);
-        pWriter.Write(InteractObjectMode.Load);
+        pWriter.Write(Mode.Load);
         pWriter.WriteInt(interactObjects.Count);
-        foreach (InteractObject interactObject in interactObjects)
+        foreach (IFieldObject<InteractObject> interactObject in interactObjects)
         {
-            WriteInteractObject(pWriter, interactObject);
+            WriteInteractObject(pWriter, interactObject.Value);
         }
 
         return pWriter;
     }
 
-    public static PacketWriter Add(InteractObject interactObject)
+    public static PacketWriter Add(IFieldObject<InteractObject> fieldInteractObject)
     {
+        InteractObject interactObject = fieldInteractObject.Value;
+
         PacketWriter pWriter = PacketWriter.Of(SendOp.InteractObject);
-        pWriter.Write(InteractObjectMode.Add);
+        pWriter.Write(Mode.Add);
         pWriter.WriteString(interactObject.Id);
         pWriter.Write(interactObject.State);
         pWriter.Write(interactObject.Type);
         pWriter.WriteInt(interactObject.InteractId);
-        pWriter.Write(interactObject.Position);
-        pWriter.Write(interactObject.Rotation);
+        pWriter.Write(fieldInteractObject.Coord);
+        pWriter.Write(fieldInteractObject.Rotation);
         pWriter.WriteUnicodeString(interactObject.Model);
         pWriter.WriteUnicodeString(interactObject.Asset);
         pWriter.WriteUnicodeString(interactObject.NormalState);
@@ -95,7 +97,7 @@ public static class InteractObjectPacket
     public static PacketWriter Remove(InteractObject interactObject)
     {
         PacketWriter pWriter = PacketWriter.Of(SendOp.InteractObject);
-        pWriter.Write(InteractObjectMode.Remove);
+        pWriter.Write(Mode.Remove);
         pWriter.WriteString(interactObject.Id);
         pWriter.WriteUnicodeString();
 
@@ -105,7 +107,7 @@ public static class InteractObjectPacket
     public static PacketWriter Interact(InteractObject interactObject)
     {
         PacketWriter pWriter = PacketWriter.Of(SendOp.InteractObject);
-        pWriter.Write(InteractObjectMode.Interact);
+        pWriter.Write(Mode.Interact);
         pWriter.WriteByte();
         pWriter.WriteString(interactObject.Id);
         pWriter.Write(interactObject.Type);

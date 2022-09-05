@@ -20,10 +20,11 @@ public class LoginHandler : LoginPacketHandler<LoginHandler>
 
     // TODO: This data needs to be dynamic
     private readonly ImmutableList<IPEndPoint> ServerIPs;
+    private readonly ImmutableList<IPEndPoint> ServerLocalIPs;
     private readonly string ServerName;
     private readonly short ChannelCount;
 
-    private enum LoginMode : byte
+    private enum Mode : byte
     {
         Banners = 0x01,
         SendCharacters = 0x02
@@ -36,14 +37,18 @@ public class LoginHandler : LoginPacketHandler<LoginHandler>
         int port = int.Parse(Environment.GetEnvironmentVariable("LOGIN_PORT"));
         builder.Add(new(IPAddress.Parse(ipAddress), port));
 
+        ImmutableList<IPEndPoint>.Builder localBuilder = ImmutableList.CreateBuilder<IPEndPoint>();
+        localBuilder.Add(new(IPAddress.Parse(Constant.LocalHost), port));
+
         ServerIPs = builder.ToImmutable();
+        ServerLocalIPs = localBuilder.ToImmutable();
         ServerName = Environment.GetEnvironmentVariable("NAME");
         ChannelCount = short.Parse(ConstantsMetadataStorage.GetConstant("ChannelCount"));
     }
 
     public override void Handle(LoginSession session, PacketReader packet)
     {
-        LoginMode mode = (LoginMode) packet.ReadByte();
+        Mode mode = (Mode) packet.ReadByte();
         string username = packet.ReadUnicodeString();
         string password = packet.ReadUnicodeString();
 
@@ -90,10 +95,10 @@ public class LoginHandler : LoginPacketHandler<LoginHandler>
 
         switch (mode)
         {
-            case LoginMode.Banners:
+            case Mode.Banners:
                 SendBanners(session, account);
                 break;
-            case LoginMode.SendCharacters:
+            case Mode.SendCharacters:
                 SendCharacters(session, account);
                 break;
             default:
@@ -107,12 +112,12 @@ public class LoginHandler : LoginPacketHandler<LoginHandler>
         List<Banner> banners = DatabaseManager.Banners.FindAllBanners();
         session.Send(NpsInfoPacket.SendUsername(account.Username));
         session.Send(BannerListPacket.SetBanner(banners));
-        session.SendFinal(ServerListPacket.SetServers(ServerName, ServerIPs, ChannelCount), logoutNotice: true);
+        session.SendFinal(ServerListPacket.SetServers(ServerName, session.IsLocalHost() ? ServerLocalIPs : ServerIPs, ChannelCount), logoutNotice: true);
     }
 
     private void SendCharacters(LoginSession session, Account account)
     {
-        string serverIp = Environment.GetEnvironmentVariable("IP");
+        string serverIp = session.IsLocalHost() ? Constant.LocalHost : Environment.GetEnvironmentVariable("IP");
         string webServerPort = Environment.GetEnvironmentVariable("WEB_PORT");
         string url = $"http://{serverIp}:{webServerPort}";
 

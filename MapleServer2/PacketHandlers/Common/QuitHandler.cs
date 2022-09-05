@@ -11,15 +11,17 @@ public class QuitHandler : CommonPacketHandler<QuitHandler>
 {
     public override RecvOp OpCode => RecvOp.RequestQuit;
     private readonly IPEndPoint LoginEndpoint;
+    private readonly IPEndPoint LoginLocalEndpoint;
 
     public QuitHandler()
     {
         string ipAddress = Environment.GetEnvironmentVariable("IP");
         int port = int.Parse(Environment.GetEnvironmentVariable("LOGIN_PORT"));
         LoginEndpoint = new(IPAddress.Parse(ipAddress), port);
+        LoginLocalEndpoint = new(IPAddress.Parse(Constant.LocalHost), port);
     }
 
-    private enum QuitMode : byte
+    private enum Mode : byte
     {
         ChangeCharacter = 0x00,
         Quit = 0x01
@@ -27,17 +29,17 @@ public class QuitHandler : CommonPacketHandler<QuitHandler>
 
     protected override void HandleCommon(Session session, PacketReader packet)
     {
-        QuitMode mode = (QuitMode) packet.ReadByte();
+        Mode mode = (Mode) packet.ReadByte();
 
         switch (mode)
         {
-            case QuitMode.ChangeCharacter:
+            case Mode.ChangeCharacter:
                 if (session is GameSession gameSession)
                 {
                     HandleChangeCharacter(gameSession);
                 }
                 break;
-            case QuitMode.Quit:
+            case Mode.Quit:
                 if (session is GameSession gameSession2)
                 {
                     HandleQuit(gameSession2);
@@ -52,7 +54,7 @@ public class QuitHandler : CommonPacketHandler<QuitHandler>
 
     private void HandleChangeCharacter(GameSession session)
     {
-        session.SendFinal(MigrationPacket.GameToLogin(LoginEndpoint, session.Player.Account.AuthData), logoutNotice: true);
+        session.SendFinal(MigrationPacket.GameToLogin(session.IsLocalHost() ? LoginLocalEndpoint : LoginEndpoint, session.Player.Account.AuthData), logoutNotice: true);
     }
 
     private static void HandleQuit(GameSession session)

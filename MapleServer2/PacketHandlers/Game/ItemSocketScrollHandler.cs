@@ -13,7 +13,7 @@ public class ItemSocketScrollHandler : GamePacketHandler<ItemSocketScrollHandler
 {
     public override RecvOp OpCode => RecvOp.ItemSocketScroll;
 
-    private enum ItemSocketScrollMode : byte
+    private enum Mode : byte
     {
         UseScroll = 0x1
     }
@@ -32,11 +32,11 @@ public class ItemSocketScrollHandler : GamePacketHandler<ItemSocketScrollHandler
 
     public override void Handle(GameSession session, PacketReader packet)
     {
-        ItemSocketScrollMode mode = (ItemSocketScrollMode) packet.ReadByte();
+        Mode mode = (Mode) packet.ReadByte();
 
         switch (mode)
         {
-            case ItemSocketScrollMode.UseScroll:
+            case Mode.UseScroll:
                 HandleUseScroll(session, packet);
                 break;
             default:
@@ -86,7 +86,7 @@ public class ItemSocketScrollHandler : GamePacketHandler<ItemSocketScrollHandler
         byte socketCount = ItemSocketScrollHelper.GetSocketCount(metadata.Id);
         int successRate = (int) ItemSocketScrollHelper.GetSuccessRate(metadata.Id) * 10000;
 
-        if (equip.Stats.GemSockets.Count(x => x.IsUnlocked) >= socketCount)
+        if (equip.GemSockets.Sockets.Count(x => x.IsUnlocked) >= socketCount)
         {
             session.Send(ItemSocketScrollPacket.Error((int) ItemSocketScrollError.SelectedItemCannotHaveMoreSockets));
             return;
@@ -100,11 +100,11 @@ public class ItemSocketScrollHandler : GamePacketHandler<ItemSocketScrollHandler
         {
             for (int i = 0; i < socketCount; i++)
             {
-                if (equip.Stats.GemSockets[i].IsUnlocked)
+                if (equip.GemSockets[i].IsUnlocked)
                 {
                     continue;
                 }
-                equip.Stats.GemSockets[i].IsUnlocked = true;
+                equip.GemSockets[i].IsUnlocked = true;
             }
 
             if (metadata.MakeUntradeable)

@@ -7,7 +7,7 @@ namespace MapleServer2.Packets;
 
 public static class ItemSocketScrollPacket
 {
-    private enum ItemSocketScrollMode : byte
+    private enum Mode : byte
     {
         OpenWindow = 0x0,
         UseScroll = 0x2,
@@ -17,7 +17,7 @@ public static class ItemSocketScrollPacket
     public static PacketWriter OpenWindow(long itemUid, int successRate, byte socketCount)
     {
         PacketWriter pWriter = PacketWriter.Of(SendOp.ItemSocketScroll);
-        pWriter.Write(ItemSocketScrollMode.OpenWindow);
+        pWriter.Write(Mode.OpenWindow);
         pWriter.WriteLong(itemUid);
         pWriter.WriteInt(successRate);
         pWriter.WriteByte(socketCount);
@@ -27,19 +27,19 @@ public static class ItemSocketScrollPacket
     public static PacketWriter UseScroll(Item item, int successRate, bool success)
     {
         PacketWriter pWriter = PacketWriter.Of(SendOp.ItemSocketScroll);
-        pWriter.Write(ItemSocketScrollMode.UseScroll);
+        pWriter.Write(Mode.UseScroll);
         pWriter.WriteBool(success);
         pWriter.WriteLong(item.Uid);
         pWriter.WriteByte();
         pWriter.WriteInt(successRate);
-        pWriter.WriteSockets(item.Stats);
+        pWriter.WriteSockets(item.Stats, item.GemSockets.Sockets);
         return pWriter;
     }
 
     public static PacketWriter Error(int errorId)
     {
         PacketWriter pWriter = PacketWriter.Of(SendOp.ItemSocketScroll);
-        pWriter.Write(ItemSocketScrollMode.Error);
+        pWriter.Write(Mode.Error);
         pWriter.WriteByte();
         pWriter.WriteInt(errorId);
         return pWriter;

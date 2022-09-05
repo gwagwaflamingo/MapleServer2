@@ -9,14 +9,13 @@ namespace MapleServer2.Types;
 public class SkillCast
 {
     public long SkillSn { get; }
-    public int CasterObjectId { get; set; }
     public int SkillObjectId { get; set; }
     public int SkillId { get; }
     public short SkillLevel { get; }
     public int ClientTick { get; }
     public int ServerTick { get; }
     public byte MotionPoint { get; }
-    public byte AttackPoint { get; }
+    public byte AttackPoint { get; set; }
     public int Duration;
     public int Interval;
     public SkillCast ParentSkill { get; }
@@ -27,8 +26,11 @@ public class SkillCast
     public CoordF Direction;
     public CoordF Rotation;
     public short LookDirection;
+    public float AimAngle;
 
+    public IFieldActor Caster;
     public IFieldActor<NpcMetadata> Target;
+    public IFieldActor Owner; // who the skill was casted at, not necessarily the same as caster
 
     public bool MetadataExists => GetSkillMetadata() is not null;
 
@@ -56,23 +58,23 @@ public class SkillCast
     public SkillCast(int id, short level, long skillSn, int serverTick, SkillCast parentSkill) : this(id, level, skillSn, serverTick)
     {
         ParentSkill = parentSkill;
-        CasterObjectId = parentSkill.CasterObjectId;
+        Caster = parentSkill.Caster;
         Position = parentSkill.Position;
         Rotation = parentSkill.Rotation;
         LookDirection = parentSkill.LookDirection;
     }
 
-    public SkillCast(int id, short level, long skillSn, int serverTick, int casterObjectId, int clientTick) : this(id, level, skillSn, serverTick)
+    public SkillCast(int id, short level, long skillSn, int serverTick, IFieldActor caster, int clientTick) : this(id, level, skillSn, serverTick)
     {
-        CasterObjectId = casterObjectId;
+        Caster = caster;
         ClientTick = clientTick;
     }
 
-    public SkillCast(int id, short level, long skillSn, int serverTick, int casterObjectId, int clientTick, byte attackPoint) : this(id, level, skillSn,
+    public SkillCast(int id, short level, long skillSn, int serverTick, IFieldActor caster, int clientTick, byte attackPoint) : this(id, level, skillSn,
         serverTick)
     {
         AttackPoint = attackPoint;
-        CasterObjectId = casterObjectId;
+        Caster = caster;
         ClientTick = clientTick;
     }
 
@@ -90,7 +92,7 @@ public class SkillCast
 
     public bool IsSpRecovery() => GetSkillMetadata().IsSpRecovery;
 
-    public bool IsGuaranteedCrit() => false;
+    public bool IsGuaranteedCrit() => HasCompulsionType(2);
 
     public int DurationTick()
     {
@@ -106,9 +108,15 @@ public class SkillCast
 
     public SkillRangeType GetRangeType() => GetSkillMetadata().RangeType;
 
+    public int[] GetSkillGroups() => GetSkillMetadata().GroupIDs;
+
     public bool IsGM() => VerifySkillTypeOf(SkillType.GM, SkillSubType.GM, BuffType.Buff, BuffSubType.Recovery);
 
     public bool IsGlobal() => VerifySkillTypeOf(SkillType.Active, SkillSubType.Global);
+
+    public bool IsBuff() => VerifySkillTypeOf(BuffType.Buff);
+
+    public bool IsUnspecifiedBuff() => VerifySkillTypeOf(SkillType.Active, SkillSubType.Status, BuffType.Buff, BuffSubType.None);
 
     public bool IsBuffToOwner() => VerifySkillTypeOf(SkillType.Active, SkillSubType.Status, BuffType.Buff, BuffSubType.Owner);
 
@@ -120,11 +128,23 @@ public class SkillCast
                VerifySkillTypeOf(BuffType.Debuff, BuffSubType.Entity);
     }
 
+    public bool IsStatus() => VerifySkillTypeOf(SkillType.Active, SkillSubType.Status);
+
     public bool IsDebuffToOwner() => VerifySkillTypeOf(BuffType.Debuff, BuffSubType.Owner);
 
     public bool IsDebuffElement() => VerifySkillTypeOf(SkillType.Active, SkillSubType.Status, BuffType.Debuff, BuffSubType.Element);
 
     public bool IsBuffShield() => VerifySkillTypeOf(SkillType.Active, SkillSubType.Status, BuffType.Buff, BuffSubType.Shield);
+
+    public bool HasCompulsionType(int type)
+    {
+        if (SkillAttack.CompulsionType == null)
+        {
+            return false;
+        }
+
+        return SkillAttack.CompulsionType.Any(compulsionType => type == compulsionType);
+    }
 
     public bool IsChainSkill()
     {
@@ -181,6 +201,22 @@ public class SkillCast
         }
 
         return skillAdditionalData.BuffType == buffType && skillAdditionalData.BuffSubType == buffSubType;
+    }
+
+    private bool VerifySkillTypeOf(BuffType buffType)
+    {
+        if (IsChainSkill())
+        {
+            return false;
+        }
+
+        SkillAdditionalData skillAdditionalData = GetAdditionalData();
+        if (skillAdditionalData is null)
+        {
+            return false;
+        }
+
+        return skillAdditionalData.BuffType == buffType;
     }
 
     private SkillMetadata GetSkillMetadata() => SkillMetadataStorage.GetSkill(SkillId);

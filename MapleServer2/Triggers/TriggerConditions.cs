@@ -43,6 +43,21 @@ public partial class TriggerContext
 
     public bool DetectLiftableObject(int[] triggerBoxIds, int itemId)
     {
+        foreach (int boxId in triggerBoxIds)
+        {
+            MapTriggerBox box = MapEntityMetadataStorage.GetTriggerBox(Field.MapId, boxId);
+            if (box is null)
+            {
+                return false;
+            }
+
+            IFieldObject<LiftableObject> liftable = Field.State.LiftableObjects.Values.FirstOrDefault(x => x.Value.Metadata.ItemId == itemId);
+            if (FieldManager.IsActorInBox(box, liftable))
+            {
+                return true;
+            }
+        }
+
         return false;
     }
 
@@ -104,8 +119,28 @@ public partial class TriggerContext
         return false;
     }
 
-    public bool NpcDetected(int arg1, int[] arg2)
+    public bool NpcDetected(int boxId, int[] spawnPointIds)
     {
+        MapTriggerBox box = MapEntityMetadataStorage.GetTriggerBox(Field.MapId, boxId);
+        if (box is null)
+        {
+            return false;
+        }
+
+        foreach (int spawnPointId in spawnPointIds)
+        {
+            Npc npc = Field.State.Npcs.Values.FirstOrDefault(x => x.SpawnPointId == spawnPointId);
+            if (npc is null)
+            {
+                continue;
+            }
+
+            if (FieldManager.IsActorInBox(box, npc))
+            {
+                return true;
+            }
+        }
+
         return false;
     }
 
@@ -119,13 +154,13 @@ public partial class TriggerContext
         InteractObjectState objectState = (InteractObjectState) state;
         foreach (int interactId in interactIds)
         {
-            InteractObject interactObject = Field.State.InteractObjects.Values.FirstOrDefault(x => x.InteractId == interactId);
+            IFieldObject<InteractObject> interactObject = Field.State.InteractObjects.Values.FirstOrDefault(x => x.Value.InteractId == interactId);
             if (interactObject == null)
             {
                 continue;
             }
 
-            if (interactObject.State != objectState)
+            if (interactObject.Value.State != objectState)
             {
                 return false;
             }
@@ -154,7 +189,7 @@ public partial class TriggerContext
 
             foreach (Character player in players)
             {
-                if (!FieldManager.IsPlayerInBox(box, player))
+                if (!FieldManager.IsActorInBox(box, player))
                 {
                     continue;
                 }
@@ -170,8 +205,8 @@ public partial class TriggerContext
                     {
                         case 1: // started
                             return quest.State is QuestState.Started;
-                        case 2: // conditions completed
-                            return quest.State is not QuestState.None && quest.Condition.All(condition => condition.Completed);
+                        case 2: // on going
+                            return quest.State is QuestState.Started && quest.Condition.All(x => x.Completed);
                         case 3: // completed
                             return quest.State is QuestState.Completed;
                     }
@@ -207,7 +242,7 @@ public partial class TriggerContext
                 return false;
             }
 
-            if (players.Any(player => FieldManager.IsPlayerInBox(box, player)))
+            if (players.Any(player => FieldManager.IsActorInBox(box, player)))
             {
                 return true;
             }

@@ -7,7 +7,7 @@ namespace MapleServer2.Packets;
 
 public static class JobPacket
 {
-    private enum JobMode : byte
+    private enum Mode : byte
     {
         Update = 0x01,
         Unk = 0x02,
@@ -19,7 +19,7 @@ public static class JobPacket
     {
         PacketWriter pWriter = PacketWriter.Of(SendOp.Job);
         pWriter.WriteInt(fieldPlayer.ObjectId);
-        pWriter.Write(JobMode.Update);
+        pWriter.Write(Mode.Update);
         pWriter.WriteJobInfo(fieldPlayer.Value, newSkillIds);
 
         return pWriter;
@@ -29,7 +29,7 @@ public static class JobPacket
     {
         PacketWriter pWriter = PacketWriter.Of(SendOp.Job);
         pWriter.WriteInt(fieldPlayer.ObjectId);
-        pWriter.Write(JobMode.Unk);
+        pWriter.Write(Mode.Unk);
         pWriter.WriteJobInfo(fieldPlayer.Value);
 
         return pWriter;
@@ -40,7 +40,7 @@ public static class JobPacket
         PacketWriter pWriter = PacketWriter.Of(SendOp.Job);
 
         pWriter.WriteInt(fieldPlayer.ObjectId);
-        pWriter.Write(JobMode.Close);
+        pWriter.Write(Mode.Close);
         pWriter.WriteJobInfo(fieldPlayer.Value);
 
         return pWriter;
@@ -51,7 +51,7 @@ public static class JobPacket
         PacketWriter pWriter = PacketWriter.Of(SendOp.Job);
 
         pWriter.WriteInt(fieldPlayer.ObjectId);
-        pWriter.Write(JobMode.Save);
+        pWriter.Write(Mode.Save);
         pWriter.WriteJobInfo(fieldPlayer.Value, newSkillIds);
 
         return pWriter;
@@ -59,6 +59,14 @@ public static class JobPacket
 
     public static void WriteJobInfo(this PacketWriter pWriter, Player player, HashSet<int> newSkillIds = null)
     {
+        SkillTab newTab = new(player.CharacterId, player.Job, player.JobCode, player.ActiveSkillTabId, "skills");
+
+        // fail safe in case something like /setjob set an invalid job. the skill tab can be deleted if a bad job id is set
+        if (player.SkillTabs.Count == 0)
+        {
+            player.SkillTabs.Add(newTab);
+        }
+
         SkillTab skillTab = player.SkillTabs.First(x => x.TabId == player.ActiveSkillTabId);
 
         pWriter.Write(player.JobCode);

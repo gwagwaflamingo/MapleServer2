@@ -141,10 +141,10 @@ public static class RandomStats
             {
                 continue;
             }
-            newBonus[stat.ItemAttribute] = new BasicStat(dictionary[stat.ItemAttribute][Roll(item.Level)]);
+            newBonus[stat.ItemAttribute] = new BasicStat(dictionary[stat.ItemAttribute][Roll(item.Id)]);
         }
 
-        foreach (SpecialStat stat in item.Stats.Randoms.OfType<SpecialStat>())
+        foreach (SpecialStat stat in item.Stats.Randoms.Values.OfType<SpecialStat>())
         {
             if (isSpecialStat && (short) stat.ItemAttribute == ignoreStat)
             {
@@ -157,7 +157,7 @@ public static class RandomStats
             {
                 continue;
             }
-            newBonus[stat.ItemAttribute] = new SpecialStat(dictionary[stat.ItemAttribute][Roll(item.Level)]);
+            newBonus[stat.ItemAttribute] = new SpecialStat(dictionary[stat.ItemAttribute][Roll(item.Id)]);
         }
 
         return newBonus;
@@ -165,18 +165,18 @@ public static class RandomStats
 
     private static Dictionary<StatAttribute, List<ParserStat>> GetRange(int itemId)
     {
-        ItemSlot slot = ItemMetadataStorage.GetSlot(itemId);
-        if (Item.IsAccessory(slot))
+        List<ItemSlot> slots = ItemMetadataStorage.GetItemSlots(itemId);
+        if (Item.IsAccessory(slots))
         {
             return ItemOptionRangeStorage.GetAccessoryRanges();
         }
 
-        if (Item.IsArmor(slot))
+        if (Item.IsArmor(slots))
         {
             return ItemOptionRangeStorage.GetArmorRanges();
         }
 
-        if (Item.IsWeapon(slot))
+        if (Item.IsWeapon(slots))
         {
             return ItemOptionRangeStorage.GetWeaponRanges();
         }
@@ -186,18 +186,18 @@ public static class RandomStats
 
     private static Dictionary<StatAttribute, List<ParserSpecialStat>> GetSpecialRange(int itemId)
     {
-        ItemSlot slot = ItemMetadataStorage.GetSlot(itemId);
-        if (Item.IsAccessory(slot))
+        List<ItemSlot> slots = ItemMetadataStorage.GetItemSlots(itemId);
+        if (Item.IsAccessory(slots))
         {
             return ItemOptionRangeStorage.GetAccessorySpecialRanges();
         }
 
-        if (Item.IsArmor(slot))
+        if (Item.IsArmor(slots))
         {
             return ItemOptionRangeStorage.GetArmorSpecialRanges();
         }
 
-        if (Item.IsWeapon(slot))
+        if (Item.IsWeapon(slots))
         {
             return ItemOptionRangeStorage.GetWeaponSpecialRanges();
         }

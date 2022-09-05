@@ -47,9 +47,9 @@ public static class ItemPacketHelper
             pWriter.WriteTemplate(item.Ugc);
         }
 
-        if (item.InventoryTab == InventoryTab.Pets)
+        if (item.InventoryTab is InventoryTab.Pets)
         {
-            pWriter.WritePet();
+            pWriter.WriteClass(item.PetInfo);
         }
 
         if (item.GemSlot != 0)
@@ -86,7 +86,7 @@ public static class ItemPacketHelper
             pWriter.WriteUnicodeString(item.OwnerCharacterName);
         }
 
-        pWriter.WriteSockets(item.Stats);
+        pWriter.WriteSockets(item.Stats, item.GemSockets.Sockets);
 
         pWriter.WriteLong(item.PairedCharacterId);
         if (item.PairedCharacterId != 0)
@@ -247,7 +247,7 @@ public static class ItemPacketHelper
     // Writes UGC template data
     private static void WriteTemplate(this PacketWriter pWriter, UGC ugc)
     {
-        pWriter.WriteUGCTemplate(ugc);
+        pWriter.WriteClass(ugc);
         pWriter.WriteLong();
         pWriter.WriteInt();
         pWriter.WriteInt();
@@ -259,24 +259,21 @@ public static class ItemPacketHelper
         pWriter.WriteUnicodeString();
     }
 
-    private static PacketWriter WritePet(this PacketWriter pWriter)
+    public static PacketWriter WriteSockets(this PacketWriter pWriter, ItemStats stats, List<GemSocket> sockets)
     {
-        pWriter.WriteUnicodeString(); // Name
-        pWriter.WriteLong(); // Exp
-        pWriter.WriteInt();
-        pWriter.WriteInt(1); // Level
-        pWriter.WriteByte();
-
-        return pWriter;
-    }
-
-    public static PacketWriter WriteSockets(this PacketWriter pWriter, ItemStats stats)
-    {
-        pWriter.WriteByte((byte) stats.GemSockets.Count);
-        int unlockedCount = 0;
-        for (int i = 0; i < stats.GemSockets.Count; i++)
+        if (sockets == null)
         {
-            if (stats.GemSockets[i].IsUnlocked)
+            pWriter.WriteByte(0); // 0 sockets
+            pWriter.WriteByte(0); // 0 unlocked sockets
+
+            return pWriter;
+        }
+
+        pWriter.WriteByte((byte) sockets.Count);
+        int unlockedCount = 0;
+        for (int i = 0; i < sockets.Count; i++)
+        {
+            if (sockets[i].IsUnlocked)
             {
                 unlockedCount++;
             }
@@ -284,21 +281,21 @@ public static class ItemPacketHelper
         pWriter.WriteByte((byte) unlockedCount);
         for (int i = 0; i < unlockedCount; i++)
         {
-            pWriter.WriteBool(stats.GemSockets[i].Gemstone != null);
-            if (stats.GemSockets[i].Gemstone != null)
+            pWriter.WriteBool(sockets[i].Gemstone != null);
+            if (sockets[i].Gemstone != null)
             {
-                pWriter.WriteInt(stats.GemSockets[i].Gemstone.Id);
-                pWriter.WriteBool(stats.GemSockets[i].Gemstone.OwnerId != 0);
-                if (stats.GemSockets[i].Gemstone.OwnerId != 0)
+                pWriter.WriteInt(sockets[i].Gemstone.Id);
+                pWriter.WriteBool(sockets[i].Gemstone.OwnerId != 0);
+                if (sockets[i].Gemstone.OwnerId != 0)
                 {
-                    pWriter.WriteLong(stats.GemSockets[i].Gemstone.OwnerId);
-                    pWriter.WriteUnicodeString(stats.GemSockets[i].Gemstone.OwnerName);
+                    pWriter.WriteLong(sockets[i].Gemstone.OwnerId);
+                    pWriter.WriteUnicodeString(sockets[i].Gemstone.OwnerName);
                 }
-                pWriter.WriteBool(stats.GemSockets[i].Gemstone.IsLocked);
-                if (stats.GemSockets[i].Gemstone.IsLocked)
+                pWriter.WriteBool(sockets[i].Gemstone.IsLocked);
+                if (sockets[i].Gemstone.IsLocked)
                 {
-                    pWriter.WriteBool(stats.GemSockets[i].Gemstone.IsLocked);
-                    pWriter.WriteLong(stats.GemSockets[i].Gemstone.UnlockTime);
+                    pWriter.WriteBool(sockets[i].Gemstone.IsLocked);
+                    pWriter.WriteLong(sockets[i].Gemstone.UnlockTime);
                 }
             }
         }

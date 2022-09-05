@@ -5,8 +5,8 @@ public static class MetadataName
     public const string AdBanner = "ad-banner";
     public const string AdditionalEffect = "additional-effect";
     public const string Animation = "animation";
-    public const string Beauty = "beauty";
     public const string BlackMarketTable = "black-market-table";
+    public const string CharacterCreate = "character-create";
     public const string ChatSticker = "chat-sticker";
     public const string ColorPalette = "color-palette";
     public const string Constants = "constants";
@@ -54,8 +54,10 @@ public static class MetadataName
     public const string MasteryUGCHousing = "mastery-ugc-housing";
     public const string MeretMarketCategory = "meret-market-category";
     public const string Mesh = "mesh";
+    public const string Mount = "mount";
     public const string Npc = "npc";
     public const string PremiumClubDailyBenefit = "premium-club-daily-benefit";
+    public const string PremiumClubEffect = "premium-club-effect";
     public const string PremiumClubPackage = "premium-club-package";
     public const string Prestige = "prestige";
     public const string PrestigeLevelMission = "prestige-level-mission";

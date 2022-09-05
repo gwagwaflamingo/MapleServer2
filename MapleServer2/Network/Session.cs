@@ -64,8 +64,6 @@ public abstract class Session : IDisposable
             throw new ObjectDisposedException("Session has been disposed.");
         }
 
-        // Allow client to close immediately
-        client.LingerState = new(true, 0);
         Name = client.Client.RemoteEndPoint?.ToString();
 
         byte[] sivBytes = new byte[4];
@@ -79,6 +77,13 @@ public abstract class Session : IDisposable
         NetworkStream = client.GetStream();
         SendCipher = new(VERSION, Siv, BLOCK_IV);
         RecvCipher = new(VERSION, Riv, BLOCK_IV);
+    }
+
+    public bool IsLocalHost()
+    {
+        string[] ipInfo = Name.Split(":");
+
+        return ipInfo?[0] == Constant.LocalHost;
     }
 
     public void Dispose()
@@ -101,6 +106,7 @@ public abstract class Session : IDisposable
         Disposed = true;
         Complete();
         Thread.Join(STOP_TIMEOUT);
+        Thread.Sleep(500);
 
         CloseClient();
 

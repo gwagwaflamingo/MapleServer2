@@ -17,7 +17,7 @@ public class AdditionalEffectMetadata
 public class AdditionalEffectLevelMetadata
 {
     [XmlElement(Order = 1)]
-    public EffectBeginConditionMetadata BeginCondition;
+    public SkillBeginCondition BeginCondition;
     [XmlElement(Order = 2)]
     public EffectBasicPropertyMetadata Basic;
     [XmlElement(Order = 3)]
@@ -65,15 +65,32 @@ public class AdditionalEffectLevelMetadata
     [XmlElement(Order = 24)]
     public EffectRideMetadata Ride;
     [XmlElement(Order = 25)]
-    public List<EffectTriggerSkillMetadata> SplashSkill;
+    public List<SkillCondition> SplashSkill;
     [XmlElement(Order = 26)]
-    public List<EffectTriggerSkillMetadata> ConditionSkill;
+    public List<SkillCondition> ConditionSkill;
 }
 
 [XmlType]
 public class EffectBeginConditionMetadata
 {
+    [XmlElement(Order = 1)]
+    public EffectBeginConditionOwnerMetadata Owner;
 
+    [XmlElement(Order = 2)]
+    public float Probability;
+}
+
+[XmlType]
+public class EffectBeginConditionOwnerMetadata
+{
+    [XmlElement(Order = 1)]
+    public int[] EventSkillIDs;
+
+    [XmlElement(Order = 2)]
+    public int[] EventEffectIDs;
+
+    [XmlElement(Order = 3)]
+    public int[] HasBuffId;
 }
 
 [XmlType]
@@ -81,6 +98,36 @@ public class EffectBasicPropertyMetadata
 {
     [XmlElement(Order = 1)]
     public int MaxBuffCount;
+
+    [XmlElement(Order = 2)]
+    public int SkillGroupType;
+
+    [XmlElement(Order = 3)]
+    public int[] GroupIds;
+
+    [XmlElement(Order = 4)]
+    public int DotCondition;
+
+    [XmlElement(Order = 5)]
+    public int DurationTick;
+
+    [XmlElement(Order = 6)]
+    public int KeepCondition;
+
+    [XmlElement(Order = 7)]
+    public int IntervalTick;
+
+    [XmlElement(Order = 8)]
+    public BuffType BuffType;
+
+    [XmlElement(Order = 9)]
+    public BuffSubType BuffSubType;
+
+    [XmlElement(Order = 10)]
+    public float CooldownTime;
+
+    [XmlElement(Order = 11)]
+    public int DelayTick;
 }
 
 [XmlType]
@@ -92,13 +139,23 @@ public class EffectMotionPropertyMetadata
 [XmlType]
 public class EffectCancelEffectMetadata
 {
-
+    [XmlElement(Order = 1)]
+    public bool CancelCheckSameCaster;
+    [XmlElement(Order = 2)]
+    public bool CancelPassiveEffect;
+    [XmlElement(Order = 3)]
+    public int[] CancelEffectCodes;
+    [XmlElement(Order = 4)]
+    public int[] CancelBuffCategories;
 }
 
 [XmlType]
 public class EffectImmuneEffectMetadata
 {
-
+    [XmlElement(Order = 1)]
+    public int[] ImmuneEffectCodes;
+    [XmlElement(Order = 2)]
+    public int[] ImmuneBuffCategories;
 }
 
 [XmlType]
@@ -110,13 +167,24 @@ public class EffectResetSkillCooldownTimeMetadata
 [XmlType]
 public class EffectModifyDurationMetadata
 {
+    [XmlElement(Order = 1)]
+    public int[] EffectCodes;
 
+    [XmlElement(Order = 2)]
+    public float[] DurationFactors;
+
+    [XmlElement(Order = 3)]
+    public float[] DurationValues;
 }
 
 [XmlType]
 public class EffectModifyOverlapCountMetadata
 {
+    [XmlElement(Order = 1)]
+    public int[] EffectCodes;
 
+    [XmlElement(Order = 2)]
+    public int[] OffsetCounts;
 }
 
 [XmlType]
@@ -146,13 +214,18 @@ public class EffectFinalStatusMetadata
 [XmlType]
 public class EffectOffensiveMetadata
 {
+    [XmlElement(Order = 1)]
+    public bool AlwaysCrit;
 
+    [XmlElement(Order = 2)]
+    public int ImmuneBreak;
 }
 
 [XmlType]
 public class EffectDefesiveMetadata
 {
-
+    [XmlElement(Order = 1)]
+    public bool Invincible;
 }
 
 [XmlType]
@@ -170,7 +243,16 @@ public class EffectExpMetadata
 [XmlType]
 public class EffectDotDamageMetadata
 {
-
+    [XmlElement(Order = 1)]
+    public byte DamageType;
+    [XmlElement(Order = 2)]
+    public float Rate;
+    [XmlElement(Order = 3)]
+    public float Value;
+    [XmlElement(Order = 4)]
+    public int Element;
+    [XmlElement(Order = 5)]
+    public bool UseGrade;
 }
 
 [XmlType]
@@ -212,7 +294,20 @@ public class EffectMesoGuardMetadata
 [XmlType]
 public class EffectInvokeMetadata
 {
-
+    [XmlElement(Order = 1)]
+    public float[] Values;
+    [XmlElement(Order = 2)]
+    public float[] Rates;
+    [XmlElement(Order = 3)]
+    public int[] Types;
+    [XmlElement(Order = 4)]
+    public int EffectId;
+    [XmlElement(Order = 5)]
+    public int EffectGroupId;
+    [XmlElement(Order = 6)]
+    public int SkillId;
+    [XmlElement(Order = 7)]
+    public int SkillGroupId;
 }
 
 [XmlType]
@@ -230,5 +325,27 @@ public class EffectRideMetadata
 [XmlType]
 public class EffectTriggerSkillMetadata
 {
+    [XmlElement(Order = 1)]
+    public int[] SkillId;
 
+    [XmlElement(Order = 2)]
+    public bool Splash;
+
+    [XmlElement(Order = 3)]
+    public int FireCount;
+
+    [XmlElement(Order = 4)]
+    public int Interval;
+
+    [XmlElement(Order = 5)]
+    public int RemoveDelay;
+
+    [XmlElement(Order = 6)]
+    public uint Delay;
+
+    [XmlElement(Order = 7)]
+    public EffectBeginConditionMetadata BeginCondition;
+
+    [XmlElement(Order = 8)]
+    public int[] SkillLevel;
 }

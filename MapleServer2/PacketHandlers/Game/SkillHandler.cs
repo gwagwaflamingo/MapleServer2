@@ -3,6 +3,7 @@ using Maple2Storage.Types;
 using Maple2Storage.Types.Metadata;
 using MaplePacketLib2.Tools;
 using MapleServer2.Constants;
+using MapleServer2.Managers;
 using MapleServer2.Packets;
 using MapleServer2.Servers.Game;
 using MapleServer2.Tools;
@@ -14,7 +15,7 @@ public class SkillHandler : GamePacketHandler<SkillHandler>
 {
     public override RecvOp OpCode => RecvOp.Skill;
 
-    private enum SkillHandlerMode : byte
+    private enum Mode : byte
     {
         Cast = 0x0,
         Damage = 0x1,
@@ -25,22 +26,22 @@ public class SkillHandler : GamePacketHandler<SkillHandler>
 
     public override void Handle(GameSession session, PacketReader packet)
     {
-        SkillHandlerMode mode = (SkillHandlerMode) packet.ReadByte();
+        Mode mode = (Mode) packet.ReadByte();
         switch (mode)
         {
-            case SkillHandlerMode.Cast:
+            case Mode.Cast:
                 HandleCast(session, packet);
                 break;
-            case SkillHandlerMode.Damage:
+            case Mode.Damage:
                 HandleDamageMode(session, packet);
                 break;
-            case SkillHandlerMode.Sync:
+            case Mode.Sync:
                 HandleSyncSkills(session, packet);
                 break;
-            case SkillHandlerMode.SyncTick:
+            case Mode.SyncTick:
                 HandleSyncTick(packet);
                 break;
-            case SkillHandlerMode.Cancel:
+            case Mode.Cancel:
                 HandleCancelSkill(session, packet);
                 break;
             default:
@@ -71,7 +72,7 @@ public class SkillHandler : GamePacketHandler<SkillHandler>
         }
 
         IFieldActor<Player> fieldPlayer = session.Player.FieldPlayer;
-        SkillCast skillCast = new(skillId, skillLevel, skillSN, serverTick, fieldPlayer.ObjectId, clientTick, attackPoint)
+        SkillCast skillCast = new(skillId, skillLevel, skillSN, serverTick, fieldPlayer, clientTick, attackPoint)
         {
             Position = position,
             Direction = direction,
@@ -211,7 +212,7 @@ public class SkillHandler : GamePacketHandler<SkillHandler>
         CoordF rotation = packet.Read<CoordF>();
         int attackPoint = packet.ReadByte();
         byte count = packet.ReadByte();
-        packet.ReadInt();
+        int unknownInt = packet.ReadInt();
 
         IFieldActor<Player> fieldPlayer = session.Player.FieldPlayer;
 
@@ -232,6 +233,8 @@ public class SkillHandler : GamePacketHandler<SkillHandler>
             return;
         }
 
+        int tick = Environment.TickCount;
+
         List<DamageHandler> damages = new();
         for (int i = 0; i < count; i++)
         {
@@ -250,21 +253,39 @@ public class SkillHandler : GamePacketHandler<SkillHandler>
             }
 
             skillCast.Target = mob;
+            skillCast.AttackPoint = (byte) attackPoint;
 
-            DamageHandler damage = DamageHandler.CalculateDamage(skillCast, fieldPlayer, mob);
-
-            mob.Damage(damage, session);
-
-            damages.Add(damage);
-
-            // TODO: Check if the skill is a debuff for an entity
-            if (!skillCast.IsDebuffElement() && !skillCast.IsDebuffToEntity() && !skillCast.IsDebuffElement())
+            foreach (SkillMotion motion in skillCast.GetSkillMotions())
             {
-                continue;
-            }
+                SkillAttack attack = motion.SkillAttacks?[attackPoint];
 
-            Status status = new(skillCast, mob.ObjectId, fieldPlayer.ObjectId, 1);
-            StatusHandler.Handle(session, status);
+                skillCast.SkillAttack = attack;
+
+                if (skillCast.GetDamageRate() != 0)
+                {
+                    DamageHandler damage = DamageHandler.CalculateDamage(skillCast, fieldPlayer, mob);
+
+                    mob.Damage(damage, session);
+
+                    damages.Add(damage);
+                }
+
+                fieldPlayer.SkillTriggerHandler.SkillTrigger(mob, skillCast);
+
+                if (attack?.SkillConditions == null)
+                {
+                    continue;
+                }
+
+                EffectTriggers parameters = new()
+                {
+                    Caster = fieldPlayer,
+                    Owner = fieldPlayer,
+                    Target = mob
+                };
+
+                fieldPlayer.SkillTriggerHandler.FireTriggers(attack.SkillConditions, parameters, skillCast, tick);
+            }
         }
 
         session.FieldManager.BroadcastPacket(SkillDamagePacket.Damage(skillCast, attackCounter, position, rotation, damages));
@@ -307,13 +328,24 @@ public class SkillHandler : GamePacketHandler<SkillHandler>
             return;
         }
 
-        SkillCast skillCast = new(skillCondition.SkillId, skillCondition.SkillLevel, GuidGenerator.Long(), session.ServerTick, parentSkill)
+        CoordF splashRotation = skillCondition.UseDirection ? parentSkill.Rotation : default;
+        CoordF direction = skillCondition.UseDirection ? parentSkill.Direction : default;
+        short lookDirection = skillCondition.UseDirection ? parentSkill.LookDirection : (short) 0;
+
+        for (int i = 0; i < skillCondition.SkillId.Length; ++i)
         {
-            SkillAttack = skillAttack,
-            Duration = skillCondition.FireCount * 1000,
-            Interval = skillCondition.Interval
-        };
-        RegionSkillHandler.HandleEffect(session.FieldManager, skillCast, attackIndex);
+            SkillCast skillCast = new(skillCondition.SkillId[i], skillCondition.SkillLevel[i], GuidGenerator.Long(), session.ServerTick, parentSkill)
+            {
+                SkillAttack = skillAttack,
+                Duration = skillCondition.FireCount * skillCondition.Interval + skillCondition.RemoveDelay,
+                Interval = skillCondition.Interval,
+                Rotation = splashRotation,
+                Direction = direction,
+                LookDirection = lookDirection,
+            };
+
+            RegionSkillHandler.HandleEffect(session.FieldManager, skillCast);
+        }
     }
 
     #endregion

@@ -13,6 +13,7 @@ public class FieldState
     public readonly ConcurrentDictionary<int, Character> Players = new();
     public readonly ConcurrentDictionary<int, Npc> Npcs = new();
     public readonly ConcurrentDictionary<int, Npc> Mobs = new();
+    public readonly ConcurrentDictionary<int, Pet> Pets = new();
     public readonly ConcurrentDictionary<int, IFieldObject<GuideObject>> Guide = new();
     public readonly ConcurrentDictionary<int, IFieldObject<Cube>> Cubes = new();
     public readonly ConcurrentDictionary<int, IFieldObject<HealingSpot>> HealingSpots = new();
@@ -28,8 +29,8 @@ public class FieldState
     public readonly ConcurrentDictionary<string, BreakableActorObject> BreakableActors = new();
     public readonly ConcurrentDictionary<string, BreakableNifObject> BreakableNifs = new();
     public readonly ConcurrentDictionary<int, IFieldObject<TriggerSkill>> TriggerSkills = new();
-    public readonly ConcurrentDictionary<string, InteractObject> InteractObjects = new();
-    public readonly ConcurrentDictionary<string, LiftableObject> LiftableObjects = new();
+    public readonly ConcurrentDictionary<string, IFieldObject<InteractObject>> InteractObjects = new();
+    public readonly ConcurrentDictionary<string, IFieldObject<LiftableObject>> LiftableObjects = new();
     public readonly ConcurrentDictionary<long, SkillCast> SkillCasts = new();
     public readonly ConcurrentDictionary<string, MapVibrateObject> VibrateObjects = new();
 
@@ -61,6 +62,16 @@ public class FieldState
     public bool RemoveNpc(int objectId)
     {
         return Npcs.Remove(objectId, out _);
+    }
+
+    public void AddPet(Pet npc)
+    {
+        Pets[npc.ObjectId] = npc;
+    }
+
+    public bool RemovePet(int objectId)
+    {
+        return Pets.Remove(objectId, out _);
     }
 
     public void AddPortal(IFieldObject<Portal> portal)
@@ -187,9 +198,9 @@ public class FieldState
         return TriggerSkills.FirstOrDefault(skill => skill.Value.Value.Id == triggerId).Value;
     }
 
-    public void AddInteractObject(InteractObject interactObject)
+    public void AddInteractObject(IFieldObject<InteractObject> interactObject)
     {
-        InteractObjects[interactObject.Id] = interactObject;
+        InteractObjects[interactObject.Value.Id] = interactObject;
     }
 
     public void RemoveInteractObject(string interactObjectId)
@@ -197,9 +208,9 @@ public class FieldState
         InteractObjects.Remove(interactObjectId, out _);
     }
 
-    public void AddLiftableObject(LiftableObject liftableObject)
+    public void AddLiftableObject(IFieldObject<LiftableObject> liftableObject)
     {
-        LiftableObjects[liftableObject.EntityId] = liftableObject;
+        LiftableObjects[liftableObject.Value.EntityId] = liftableObject;
     }
 
     public void AddSkillCast(SkillCast skillCast)
@@ -221,5 +232,30 @@ public class FieldState
     public void AddVibrateObject(MapVibrateObject vibrateObject)
     {
         VibrateObjects[vibrateObject.EntityId] = vibrateObject;
+    }
+
+    public IFieldActor GetActor(int actorId)
+    {
+        if (Players.TryGetValue(actorId, out Character player))
+        {
+            return player;
+        }
+
+        if (Mobs.TryGetValue(actorId, out Npc mob))
+        {
+            return mob;
+        }
+
+        if (Pets.TryGetValue(actorId, out Pet pet))
+        {
+            return pet;
+        }
+
+        if (Npcs.TryGetValue(actorId, out Npc npc))
+        {
+            return npc;
+        }
+
+        return null;
     }
 }

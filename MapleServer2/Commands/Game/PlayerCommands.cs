@@ -158,7 +158,7 @@ public class LevelCommand : InGameCommand
 
         // Reset stats to default
         player.Stats = new(player.Job);
-        player.Stats.AddBaseStats(player, level - 1);
+        player.Stats.AddBaseStats(player, level);
 
         trigger.Session.Send(StatPacket.SetStats(player.FieldPlayer));
         trigger.Session.FieldManager.BroadcastPacket(StatPacket.SetStats(player.FieldPlayer), trigger.Session);
@@ -182,7 +182,8 @@ public class LevelUpCommand : InGameCommand
 
     public override void Execute(GameCommandTrigger trigger)
     {
-        trigger.Session.Player.Levels.LevelUp();
+        Levels levels = trigger.Session.Player.Levels;
+        levels.GainExp(ExpMetadataStorage.GetExpToLevel(levels.Level) - levels.Exp);
     }
 }
 
@@ -206,7 +207,7 @@ public class SkillCommand : InGameCommand
     public override void Execute(GameCommandTrigger trigger)
     {
         GameSession gameSession = trigger.Session;
-        IFieldObject<Player> player = gameSession.Player.FieldPlayer;
+        IFieldActor<Player> player = gameSession.Player.FieldPlayer;
 
         int id = trigger.Get<int>("id");
         short level = trigger.Get<short>("level") > 0 ? trigger.Get<short>("level") : (short) 1;
@@ -217,7 +218,7 @@ public class SkillCommand : InGameCommand
             return;
         }
 
-        SkillCast skillCast = new(id, level, GuidGenerator.Long(), gameSession.ServerTick, player.ObjectId, gameSession.ClientTick)
+        SkillCast skillCast = new(id, level, GuidGenerator.Long(), gameSession.ServerTick, player, gameSession.ClientTick)
         {
             Position = player.Coord,
             Direction = default,

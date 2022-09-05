@@ -8,7 +8,7 @@ namespace MapleServer2.Packets;
 
 public static class SkillDamagePacket
 {
-    private enum SkillDamageMode : byte
+    private enum Mode : byte
     {
         SyncDamage = 0x0,
         Damage = 0x1,
@@ -25,7 +25,7 @@ public static class SkillDamagePacket
     {
         PacketWriter pWriter = PacketWriter.Of(SendOp.SkillDamage);
 
-        pWriter.Write(SkillDamageMode.SyncDamage);
+        pWriter.Write(Mode.SyncDamage);
         pWriter.WriteLong(skillCast.SkillSn);
         pWriter.WriteInt(player.ObjectId);
         pWriter.WriteInt(skillCast.SkillId);
@@ -53,11 +53,11 @@ public static class SkillDamagePacket
     {
         PacketWriter pWriter = PacketWriter.Of(SendOp.SkillDamage);
 
-        pWriter.Write(SkillDamageMode.Damage);
+        pWriter.Write(Mode.Damage);
         pWriter.WriteLong(skillCast.SkillSn);
         pWriter.WriteInt(attackCount);
-        pWriter.WriteInt(skillCast.CasterObjectId);
-        pWriter.WriteInt(skillCast.CasterObjectId);
+        pWriter.WriteInt(skillCast.Caster.ObjectId);
+        pWriter.WriteInt(skillCast.Caster.ObjectId);
         pWriter.WriteInt(skillCast.SkillId);
         pWriter.WriteShort(skillCast.SkillLevel);
         // This values appears on some SkillsId, and others like BossSkill, sometimes is 0
@@ -86,15 +86,15 @@ public static class SkillDamagePacket
         return pWriter;
     }
 
-    public static PacketWriter DotDamage(int ownerId, int targetId, int tick, DamageType damageType, int damage)
+    public static PacketWriter DotDamage(int ownerId, int targetId, int tick, HitType hitType, int damage)
     {
         PacketWriter pWriter = PacketWriter.Of(SendOp.SkillDamage);
 
-        pWriter.Write(SkillDamageMode.DotDamage);
+        pWriter.Write(Mode.DotDamage);
         pWriter.WriteInt(ownerId);
         pWriter.WriteInt(targetId);
         pWriter.WriteInt(tick);
-        pWriter.Write(damageType);
+        pWriter.Write(hitType);
         pWriter.WriteInt(damage);
 
         return pWriter;
@@ -104,7 +104,7 @@ public static class SkillDamagePacket
     {
         PacketWriter pWriter = PacketWriter.Of(SendOp.SkillDamage);
 
-        pWriter.Write(SkillDamageMode.Heal);
+        pWriter.Write(Mode.Heal);
         pWriter.WriteInt(status.Source);
         pWriter.WriteInt(status.Target);
         pWriter.WriteInt(status.UniqueId);
@@ -119,9 +119,9 @@ public static class SkillDamagePacket
     {
         PacketWriter pWriter = PacketWriter.Of(SendOp.SkillDamage);
 
-        pWriter.Write(SkillDamageMode.RegionDamage);
+        pWriter.Write(Mode.RegionDamage);
         pWriter.WriteLong(); // always 0??
-        pWriter.WriteInt(skillCast.CasterObjectId);
+        pWriter.WriteInt(skillCast.Caster?.ObjectId ?? 0);
         pWriter.WriteInt(skillCast.SkillObjectId);
         pWriter.WriteByte();
 
@@ -151,7 +151,7 @@ public static class SkillDamagePacket
     {
         PacketWriter pWriter = PacketWriter.Of(SendOp.SkillDamage);
 
-        pWriter.Write(SkillDamageMode.RegionDamage);
+        pWriter.Write(Mode.RegionDamage);
         pWriter.WriteLong(skillCast.SkillSn);
         pWriter.WriteInt(skillCast.SkillId);
         pWriter.WriteShort(skillCast.SkillLevel);
@@ -176,7 +176,7 @@ public static class SkillDamagePacket
     {
         PacketWriter pWriter = PacketWriter.Of(SendOp.SkillDamage);
 
-        pWriter.Write(SkillDamageMode.UnkMode7);
+        pWriter.Write(Mode.UnkMode7);
         pWriter.WriteInt(unkInt);
         pWriter.WriteInt(count);
         for (int i = 0; i < count; i++)
@@ -191,7 +191,7 @@ public static class SkillDamagePacket
     {
         PacketWriter pWriter = PacketWriter.Of(SendOp.SkillUse);
 
-        pWriter.Write(SkillDamageMode.UnkMode8);
+        pWriter.Write(Mode.UnkMode8);
         pWriter.WriteLong(unkLong);
         pWriter.WriteBool(unkBool);
         if (unkBool)

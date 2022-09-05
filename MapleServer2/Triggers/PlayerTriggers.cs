@@ -95,7 +95,7 @@ public partial class TriggerContext
                 return;
             }
 
-            players = players.Where(player => FieldManager.IsPlayerInBox(box, player)).ToList();
+            players = players.Where(player => FieldManager.IsActorInBox(box, player)).ToList();
         }
 
         // move player back to return map
@@ -114,9 +114,7 @@ public partial class TriggerContext
             IFieldObject<Portal> portal = Field.State.Portals.Values.First(p => p.Value.Id == triggerId);
             foreach (IFieldObject<Player> player in players)
             {
-                player.Coord = portal.Coord;
-                player.Rotation = portal.Rotation;
-                Field.BroadcastPacket(UserMoveByPortalPacket.Move(player, portal.Coord, portal.Rotation, isTrigger: true));
+                player.Value.Move(portal.Coord, portal.Rotation, isTrigger: true);
             }
 
             return;
@@ -180,7 +178,7 @@ public partial class TriggerContext
     {
     }
 
-    public void SetAchievement(int boxId, string type, string trophySet)
+    public void SetAchievement(int boxId, string type, string code)
     {
         List<Character> players = Field.State.Players.Values.ToList();
         if (boxId != 0)
@@ -191,14 +189,15 @@ public partial class TriggerContext
                 return;
             }
 
-            players = players.Where(player => FieldManager.IsPlayerInBox(box, player)).ToList();
+            players = players.Where(player => FieldManager.IsActorInBox(box, player)).ToList();
         }
 
         foreach (IFieldObject<Player> player in players)
         {
             if (type == "trigger")
             {
-                TrophyManager.OnTrigger(player.Value, trophySet);
+                TrophyManager.OnTrigger(player.Value, code);
+                QuestManager.OnTrigger(player.Value, code);
             }
         }
     }
@@ -217,6 +216,18 @@ public partial class TriggerContext
             return;
         }
 
+        if (arg1 == 1) // Use npc object id?
+        {
+            Npc npc = Field.State.Npcs.Values.FirstOrDefault(x => x.SpawnPointId == npcId);
+            if (npc is null)
+            {
+                return;
+            }
+
+            Field.BroadcastPacket(CinematicPacket.BalloonTalk(npc.ObjectId, false, script, delay * 1000, 0));
+            return;
+        }
+
         Field.BroadcastPacket(CinematicPacket.Conversation(npcId, npcId.ToString(), script, delay * 1000, align));
     }
 
@@ -230,8 +241,23 @@ public partial class TriggerContext
         Field.BroadcastPacket(TimeScalePacket.SetTimeScale(enable, startScale, endScale, duration, interpolator));
     }
 
-    public void AddBuff(int[] arg1, int arg2, byte arg3, bool arg4, bool arg5, string feature)
+    public void AddBuff(int[] boxIds, int skillId, byte skillLevel, bool arg4, bool arg5, string feature)
     {
+        foreach (int boxId in boxIds)
+        {
+            MapTriggerBox box = MapEntityMetadataStorage.GetTriggerBox(Field.MapId, boxId);
+            if (box is null)
+            {
+                return;
+            }
+
+            foreach (Character player in Field.State.Players.Values.Where(player => FieldManager.IsActorInBox(box, player)))
+            {
+                // TODO: Rework when buff system is implemented
+                Status status = new(new(skillId, skillLevel), player.ObjectId, player.ObjectId, 1);
+                StatusHandler.Handle(player.Value.Session, status);
+            }
+        }
     }
 
     public void RemoveBuff(int arg1, int arg2, bool arg3)
@@ -251,7 +277,14 @@ public partial class TriggerContext
         };
         foreach (IFieldObject<Player> player in Field.State.Players.Values)
         {
-            player.Value.Triggers.Add(playerTrigger);
+            PlayerTrigger trigger = player.Value.Triggers.FirstOrDefault(x => x.Key == key);
+            if (trigger is null)
+            {
+                player.Value.Triggers.Add(playerTrigger);
+                continue;
+            }
+            trigger.Value = value;
+            trigger.TriggerId = triggerId;
         }
     }
 

@@ -1,0 +1,75 @@
+﻿using Maple2Storage.Enums;
+using MaplePacketLib2.Tools;
+using MapleServer2.Constants;
+using MapleServer2.Servers.Game;
+
+namespace MapleServer2.PacketHandlers.Game;
+
+public class ItemBreakHandler : GamePacketHandler<ItemBreakHandler>
+{
+    public override RecvOp OpCode => RecvOp.RequestItemBreak;
+
+    private enum Mode : byte
+    {
+        Open = 0x00,
+        Add = 0x01,
+        Remove = 0x02,
+        Dismantle = 0x03,
+        AutoAdd = 0x06
+    }
+
+    public override void Handle(GameSession session, PacketReader packet)
+    {
+        Mode mode = (Mode) packet.ReadByte();
+        switch (mode)
+        {
+            case Mode.Open:
+                session.Player.DismantleInventory.Slots = new (long, int)[100];
+                session.Player.DismantleInventory.Rewards = new();
+                break;
+            case Mode.Add:
+                HandleAdd(session, packet);
+                break;
+            case Mode.Remove:
+                HandleRemove(session, packet);
+                break;
+            case Mode.Dismantle:
+                HandleDismantle(session);
+                break;
+            case Mode.AutoAdd:
+                HandleAutoAdd(session, packet);
+                break;
+            default:
+                LogUnknownMode(mode);
+                break;
+        }
+    }
+
+    private static void HandleAdd(GameSession session, PacketReader packet)
+    {
+        short slot = (short) packet.ReadInt();
+        long uid = packet.ReadLong();
+        int amount = packet.ReadInt();
+
+        session.Player.DismantleInventory.DismantleAdd(session, slot, uid, amount);
+    }
+
+    private static void HandleRemove(GameSession session, PacketReader packet)
+    {
+        long uid = packet.ReadLong();
+        session.Player.DismantleInventory.Remove(session, uid);
+    }
+
+    private static void HandleDismantle(GameSession session)
+    {
+        session.Player.DismantleInventory.Dismantle(session);
+    }
+
+    private static void HandleAutoAdd(GameSession session, PacketReader packet)
+    {
+        InventoryTab inventoryTab = (InventoryTab) packet.ReadByte();
+        byte rarityType = packet.ReadByte();
+
+        session.Player.DismantleInventory.AutoAdd(session, inventoryTab, rarityType);
+    }
+}

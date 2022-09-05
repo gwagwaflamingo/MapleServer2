@@ -6,6 +6,7 @@ using MapleServer2.Commands.Core;
 using MapleServer2.Database;
 using MapleServer2.Enums;
 using MapleServer2.Extensions;
+using MapleServer2.Managers;
 using MapleServer2.Managers.Actors;
 using MapleServer2.PacketHandlers.Game;
 using MapleServer2.PacketHandlers.Game.Helpers;
@@ -148,7 +149,7 @@ public class AttributeCommand : InGameCommand
         Description = "Add attribute to selected item.";
         Parameters = new()
         {
-            new Parameter<string>("equipSlot", "Equip slot, e.g.: RH (ItemSlot.cs)"),
+            new Parameter<string>("equipSlot", "Equip slot, e.g.: RH (ItemSlot.cs) or PET (Active pet)"),
             new Parameter<string>("newAttributeId", "New Attribute, e.g.: Dex (StatAttribute.cs)"),
             new Parameter<float>("value", "Value, e.g.: 10 / 0.002"),
             new Parameter<byte>("isPercentage", "Is percentage, e.g.: 1 / 0"),
@@ -164,6 +165,7 @@ public class AttributeCommand : InGameCommand
         float value = trigger.Get<float>("value");
         byte isPercentage = trigger.Get<byte>("isPercentage");
         byte category = trigger.Get<byte>("category");
+        bool isPet = equipSlot == "PET";
 
         if (string.IsNullOrEmpty(equipSlot))
         {
@@ -171,7 +173,7 @@ public class AttributeCommand : InGameCommand
             return;
         }
 
-        if (!Enum.TryParse(equipSlot, ignoreCase: true, out ItemSlot itemSlot) || itemSlot == ItemSlot.NONE)
+        if ((!Enum.TryParse(equipSlot, ignoreCase: true, out ItemSlot itemSlot) || itemSlot == ItemSlot.NONE) && !isPet)
         {
             trigger.Session.SendNotice($"{equipSlot} is not a valid equip slot.");
             string slots = "";
@@ -190,11 +192,17 @@ public class AttributeCommand : InGameCommand
             return;
         }
 
+        Item item = null;
         Player player = trigger.Session.Player;
-        if (!player.Inventory.Equips.TryGetValue(itemSlot, out Item item))
+        if (!isPet && !player.Inventory.Equips.TryGetValue(itemSlot, out item))
         {
             trigger.Session.SendNotice($"You don't have an item in slot {itemSlot}.");
             return;
+        }
+
+        if (isPet)
+        {
+            item = player.ActivePet;
         }
 
         ItemStat itemStat;
@@ -207,8 +215,6 @@ public class AttributeCommand : InGameCommand
         {
             itemStat = new BasicStat(newAttribute, value, attributeType);
         }
-
-        player.DecreaseStats(item);
 
         if (category == 0)
         {
@@ -245,9 +251,22 @@ public class AttributeCommand : InGameCommand
             }
         }
 
-        trigger.Session.FieldManager.BroadcastPacket(EquipmentPacket.EquipItem(player.FieldPlayer, item, itemSlot));
+        if (!isPet)
+        {
+            trigger.Session.FieldManager.BroadcastPacket(EquipmentPacket.EquipItem(player.FieldPlayer, item, itemSlot));
+        }
 
-        player.IncreaseStats(item);
+        if (isPet)
+        {
+            player.Inventory.RemoveItem(player.Session, item.Uid, out Item _);
+            player.Inventory.AddItem(player.Session, item, true);
+
+            player.Session.FieldManager.RemovePet(player.FieldPlayer.ActivePet);
+
+            player.Session.FieldManager.AddPet(player.Session, item.Uid);
+        }
+
+        player.FieldPlayer.ComputeStats();
 
         DatabaseManager.Items.Update(item);
     }
@@ -299,15 +318,216 @@ public class ClearStatsCommand : InGameCommand
             return;
         }
 
-        player.DecreaseStats(item);
-
         item.Stats.Constants.Clear();
         item.Stats.Randoms.Clear();
         item.Stats.Statics.Clear();
 
+        player.FieldPlayer.ComputeStats();
+
         trigger.Session.FieldManager.BroadcastPacket(EquipmentPacket.EquipItem(player.FieldPlayer, item, itemSlot));
 
         DatabaseManager.Items.Update(item);
+    }
+}
+
+public class PetLevelCommand : InGameCommand
+{
+    public PetLevelCommand()
+    {
+        Aliases = new()
+        {
+            "petlevel"
+        };
+        Description = "Sets the level of your active pet.";
+        Usage = "/petlevel level";
+        Parameters = new()
+        {
+            new Parameter<int>("level", "The pet level to set the pet to (1 - 50). Not the same as item level.")
+        };
+    }
+
+    public override void Execute(GameCommandTrigger trigger)
+    {
+        int level = trigger.Get<int>("level");
+
+        Player player = trigger.Session.Player;
+        Item pet = player.ActivePet;
+
+        if (pet is null)
+        {
+            trigger.Session.SendNotice("No pet currently equipped.");
+
+            return;
+        }
+
+        pet.PetInfo.Level = (short) Math.Min(50, Math.Max(1, level));
+
+        player.Inventory.RemoveItem(player.Session, pet.Uid, out Item _);
+        player.Inventory.AddItem(player.Session, pet, true);
+
+        player.Session.FieldManager.RemovePet(player.FieldPlayer.ActivePet);
+        player.Session.FieldManager.AddPet(player.Session, pet.Uid);
+    }
+}
+
+public class BonusPointsCommand : InGameCommand
+{
+    public BonusPointsCommand()
+    {
+        Aliases = new()
+        {
+            "bonuspoints"
+        };
+        Description = "Sets the bonus attribute points ands skill points. Leave out 'mode' and 'amount' to display point counts instead.";
+        Usage = "/bonuspoints [type] [source] [mode] [amount]";
+        Parameters = new()
+        {
+            new Parameter<string>("type", "Type of bonus points. e.g.: Attrib/Attribute, Rank1, Rank2"),
+            new Parameter<string>("source", "Source of the bonus points. Attribute sources: Trophy, Quest, Exploration, Prestige. Skill point sources: Trophy, Chapter."),
+            new Parameter<string>("mode", "Specifies whether to add or set points. e.g.: Add/Set"),
+            new Parameter<int>("amount", "Amount to add/set")
+        };
+    }
+
+    private enum BonusPointType
+    {
+        Unknown,
+        Attribute,
+        Rank1,
+        Rank2,
+        Attrib = Attribute,
+        SkillRank1 = Rank1,
+        SkillRank2 = Rank2
+    }
+
+    private enum PointModifyMode
+    {
+        Add,
+        Set
+    }
+
+    public override void Execute(GameCommandTrigger trigger)
+    {
+        Player player = trigger.Session.Player;
+
+        string type = trigger.Get<string>("type");
+        string source = trigger.Get<string>("source");
+        string mode = trigger.Get<string>("mode");
+
+        bool printSkills = true;
+        bool printAtributes = true;
+        short skillRank = 0;
+        BonusPointType pointType = BonusPointType.Unknown;
+        SkillPointSource skillSource = SkillPointSource.Unknown;
+        OtherStatsIndex attribSource = OtherStatsIndex.Unknown;
+
+        if (!string.IsNullOrEmpty(type))
+        {
+            if (!Enum.TryParse(type, ignoreCase: true, out pointType) || pointType == BonusPointType.Unknown)
+            {
+                trigger.Session.SendNotice($"'{source}' is not a valid point source!");
+
+                return;
+            }
+
+            printSkills = pointType == BonusPointType.Rank1 || pointType == BonusPointType.Rank2;
+            printAtributes = pointType == BonusPointType.Attribute;
+            skillRank = (short) (pointType == BonusPointType.Rank1 ? 0 : 1);
+        }
+
+        if (!string.IsNullOrEmpty(source))
+        {
+            bool parsedSkillSource = pointType != BonusPointType.Attribute && Enum.TryParse(source, ignoreCase: true, out skillSource);
+            bool parsedAttributeSource = pointType == BonusPointType.Attribute && Enum.TryParse(source, ignoreCase: true, out attribSource);
+
+            if (!parsedSkillSource && !parsedAttributeSource)
+            {
+                trigger.Session.SendNotice($"'{source}' is not a valid {pointType} point source!");
+
+                return;
+            }
+        }
+
+        if (string.IsNullOrEmpty(mode))
+        {
+            if (printSkills)
+            {
+                int pointsFound = 0;
+
+                foreach ((SkillPointSource pointSource, ExtraSkillPoints skillPoints) in player.StatPointDistribution.ExtraSkillPoints)
+                {
+                    if (pointSource != skillSource && skillSource != SkillPointSource.Unknown)
+                    {
+                        continue;
+                    }
+
+                    foreach ((short rank, int points) in skillPoints.ExtraPoints)
+                    {
+                        if (points != 0 && (rank == skillRank || skillSource == SkillPointSource.Unknown))
+                        {
+                            trigger.Session.SendNotice($"{points} rank {rank + 1} skill points from {pointSource}");
+
+                            pointsFound += points;
+                        }
+                    }
+                }
+
+                trigger.Session.SendNotice($"Found {pointsFound} skill points from the specified source");
+            }
+
+            if (printAtributes)
+            {
+                int pointsFound = 0;
+
+                foreach ((OtherStatsIndex pointSource, int attribPoints) in player.StatPointDistribution.OtherStats)
+                {
+                    if (pointSource != attribSource && attribSource != OtherStatsIndex.Unknown)
+                    {
+                        continue;
+                    }
+
+                    trigger.Session.SendNotice($"{attribPoints} attribute points from {pointSource}");
+
+                    pointsFound += attribPoints;
+                }
+
+                trigger.Session.SendNotice($"Found {pointsFound} attribute points from the specified source");
+            }
+
+            return;
+        }
+
+        if (!Enum.TryParse(mode, ignoreCase: true, out PointModifyMode modifyMode))
+        {
+            trigger.Session.SendNotice($"Invalid point modification mode '{mode}'");
+
+            return;
+        }
+
+        int amount = trigger.Get<int>("amount");
+
+        if (pointType == BonusPointType.Attribute)
+        {
+            if (modifyMode == PointModifyMode.Set && player.StatPointDistribution.OtherStats.TryGetValue(attribSource, out int currentAmount))
+            {
+                amount -= currentAmount;
+            }
+
+            player.StatPointDistribution.AddTotalStatPoints(amount, attribSource);
+
+            player.Session.Send(StatPointPacket.WriteTotalStatPoints(player));
+        }
+
+        if (pointType != BonusPointType.Attribute)
+        {
+            if (modifyMode == PointModifyMode.Set)
+            {
+                amount -= player.StatPointDistribution.ExtraSkillPoints[skillSource].ExtraPoints[skillRank];
+            }
+
+            player.StatPointDistribution.AddTotalSkillPoints(amount, skillRank, skillSource);
+            player.Session.Send(SkillPointPacket.ExtraSkillPoints(player));
+        }
     }
 }
 
