@@ -35,6 +35,7 @@ function handleGoto(nextScript)
         return x + 1 --already has item
     else
         --TO DO: a function for checking whether inventory tab is full is needed! 
+        --nextScript will be x + 2 if inventory is full
         return x --giving item
     end
 end
